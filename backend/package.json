@@ -1,0 +1,24 @@
+{
+    "name": "bizflow-backend",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "node --watch src/server.js",
+        "start": "node src/server.js",
+        "test": "node --test"
+    },
+    "dependencies": {
+        "bcryptjs": "latest",
+        "cors": "latest",
+        "dotenv": "latest",
+        "express": "latest",
+        "helmet": "latest",
+        "jsonwebtoken": "latest",
+        "mongoose": "latest",
+        "morgan": "latest"
+    },
+    "devDependencies": {
+        "mongodb-memory-server": "^11.2.0"
+    }
+}
