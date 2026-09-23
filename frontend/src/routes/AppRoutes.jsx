@@ -8,6 +8,7 @@ import DashboardPage from "../pages/DashboardPage.jsx";
 import PlaceholderPage from "../pages/PlaceholderPage.jsx";
 import ForbiddenPage from "../pages/ForbiddenPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
+import CustomersPage from "../pages/CustomersPage.jsx";
 
 function HomeRedirect() {
   const { isAuthenticated } = useAuth();
@@ -20,14 +21,8 @@ export default function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route
-            path="/dashboard"
-            element={<DashboardPage />}
-          />
-          <Route
-            path="/customers"
-            element={<PlaceholderPage title="Customers" />}
-          />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
           <Route
             path="/products"
             element={<PlaceholderPage title="Products" />}
