@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Plus,
   Search,
@@ -11,50 +11,97 @@ import {
   Trash2,
   AlertCircle,
   Loader2,
-  Users,
-  Building2,
-  Phone,
-  Mail,
+  Package,
+  Tags,
   RefreshCw,
 } from "lucide-react";
 import {
-  getCustomers,
-  createCustomer,
-  updateCustomer,
-  deleteCustomer,
-} from "../services/customers/customerService.js";
+  getProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+} from "../services/products/productService.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PAGE_SIZE = 10;
 
 const SORT_FIELDS = [
   { value: "createdAt", label: "Date Added" },
+  { value: "updatedAt", label: "Last Updated" },
   { value: "name", label: "Name" },
-  { value: "email", label: "Email" },
-  { value: "company", label: "Company" },
+  { value: "category", label: "Category" },
+  { value: "price", label: "Price" },
+  { value: "stock", label: "Stock" },
   { value: "status", label: "Status" },
 ];
 
+const STATUS_LABELS = {
+  active: "Active",
+  inactive: "Inactive",
+  out_of_stock: "Out of Stock",
+};
+
 const EMPTY_FORM = {
   name: "",
-  email: "",
-  phone: "",
-  company: "",
-  address: "",
+  category: "",
+  description: "",
+  price: "",
+  stock: "",
   status: "active",
+};
+
+// A saved product is not guaranteed to carry every field — the backend omits
+// `description` when it was never set. Build the form from the known field set,
+// falling back to each field's default, so every string field is always a
+// string before validation or submission touches it.
+const toFormValues = (product) =>
+  Object.fromEntries(
+    Object.entries(EMPTY_FORM).map(([field, fallback]) => {
+      const value = product[field];
+      return [
+        field,
+        value === undefined || value === null ? fallback : String(value),
+      ];
+    }),
+  );
+
+// Price is stored as a bare number with no currency on the backend, so it is
+// rendered as a grouped decimal only — no symbol is assumed.
+const formatPrice = (value) =>
+  Number(value).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+// Mirrors the backend stock/status coupling so the form can never submit a
+// combination the API would reject.
+const deriveStatus = (stock, currentStatus) => {
+  if (stock === 0) return "out_of_stock";
+  if (currentStatus === "out_of_stock") return "active";
+  return currentStatus;
 };
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
-  return status === "active" ? (
-    <span className="inline-flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      Active
-    </span>
-  ) : (
+  if (status === "active") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Active
+      </span>
+    );
+  }
+  if (status === "out_of_stock") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+        Out of Stock
+      </span>
+    );
+  }
+  return (
     <span className="inline-flex items-center gap-1.5 rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-500">
       <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
       Inactive
@@ -112,7 +159,11 @@ function Field({ id, label, error, required, children }) {
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-zinc-800">
         {label}
-        {required && <span className="ml-0.5 text-red-500" aria-hidden="true">*</span>}
+        {required && (
+          <span className="ml-0.5 text-red-500" aria-hidden="true">
+            *
+          </span>
+        )}
       </label>
       <div className="mt-1.5">{children}</div>
       {error && (
@@ -136,10 +187,12 @@ const inputCls = (hasError) =>
       : "border-zinc-300 focus:border-zinc-900 focus:ring-zinc-900"
   } disabled:cursor-not-allowed disabled:bg-zinc-100`;
 
-// ── Customer Form Modal ───────────────────────────────────────────────────────
+// ── Product Form Modal ────────────────────────────────────────────────────────
 
-function CustomerModal({ mode, initial, onClose, onSaved }) {
-  const [form, setForm] = useState(initial ?? EMPTY_FORM);
+function ProductModal({ mode, initial, onClose, onSaved }) {
+  const [form, setForm] = useState(
+    () => (initial ? toFormValues(initial) : { ...EMPTY_FORM }),
+  );
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -151,87 +204,175 @@ function CustomerModal({ mode, initial, onClose, onSaved }) {
 
   // Close on Escape
   useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    const handler = (e) => {
+      if (e.key === "Escape") onClose();
+    };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  const stockNum = Number(form.stock);
+  const hasStock = form.stock !== "" && !Number.isNaN(stockNum);
+
+  // Keep the offered statuses in step with the stock value.
+  const statusOptions = useMemo(() => {
+    if (hasStock && stockNum === 0) return ["out_of_stock"];
+    return ["active", "inactive"];
+  }, [hasStock, stockNum]);
+
   const set = (field) => (e) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }));
-    if (errors[field]) setErrors((prev) => { const n = { ...prev }; delete n[field]; return n; });
+    const value = e.target.value;
+    setForm((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+    if (apiError) setApiError(null);
+  };
+
+  const setStock = (e) => {
+    const raw = e.target.value;
+    setForm((prev) => {
+      const parsed = Number(raw);
+      if (raw === "" || Number.isNaN(parsed)) return { ...prev, stock: raw };
+      return { ...prev, stock: raw, status: deriveStatus(parsed, prev.status) };
+    });
+    if (errors.stock) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.stock;
+        return next;
+      });
+    }
+    if (errors.status) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.status;
+        return next;
+      });
+    }
     if (apiError) setApiError(null);
   };
 
   const validate = () => {
     const errs = {};
+
     if (!form.name.trim() || form.name.trim().length < 2)
-      errs.name = "Name must be at least 2 characters";
+      errs.name = "Product name must be at least 2 characters";
     else if (form.name.trim().length > 100)
-      errs.name = "Name cannot exceed 100 characters";
+      errs.name = "Product name cannot exceed 100 characters";
 
-    if (!form.email.trim() || !EMAIL_RE.test(form.email.trim()))
-      errs.email = "Please provide a valid email address";
+    if (!form.category.trim()) errs.category = "Category is required";
+    else if (form.category.trim().length > 50)
+      errs.category = "Category cannot exceed 50 characters";
 
-    if (!form.phone.trim())
-      errs.phone = "Phone number is required";
-    else if (form.phone.trim().length > 20)
-      errs.phone = "Phone number cannot exceed 20 characters";
+    if (form.description.trim().length > 1000)
+      errs.description = "Description cannot exceed 1000 characters";
 
-    if (form.company && form.company.trim().length > 100)
-      errs.company = "Company name cannot exceed 100 characters";
+    const price = Number(form.price);
+    if (form.price === "" || Number.isNaN(price))
+      errs.price = "Price is required and must be a number";
+    else if (price < 0) errs.price = "Price cannot be negative";
 
-    if (form.address && form.address.trim().length > 255)
-      errs.address = "Address cannot exceed 255 characters";
+    const stock = Number(form.stock);
+    if (form.stock === "" || Number.isNaN(stock))
+      errs.stock = "Stock is required and must be a whole number";
+    else if (!Number.isInteger(stock))
+      errs.stock = "Stock must be a whole number";
+    else if (stock < 0) errs.stock = "Stock cannot be negative";
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
+  // Route field-level validation failures back onto their inputs.
+  const applyError = (err) => {
+    const message = err.message || "An unexpected error occurred.";
+    const fieldErrors = {};
+    for (const detail of err.details || []) {
+      if (detail?.field && detail?.message) {
+        fieldErrors[detail.field] = detail.message;
+      }
+    }
+    if (Object.keys(fieldErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...fieldErrors }));
+      if (!fieldErrors.name && !fieldErrors.description) setApiError(message);
+      return;
+    }
+    setApiError(message);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
+
     setSaving(true);
     setApiError(null);
+
+    const stock = Number(form.stock);
+
     try {
+      if (mode === "create") {
+        await createProduct({
+          name: form.name.trim(),
+          category: form.category.trim(),
+          price: Number(form.price),
+          stock,
+          status: deriveStatus(stock, form.status),
+          ...(form.description.trim()
+            ? { description: form.description.trim() }
+            : {}),
+        });
+        onSaved("Product created successfully.", true);
+        return;
+      }
+
       const payload = {
         name: form.name.trim(),
-        email: form.email.trim(),
-        phone: form.phone.trim(),
-        company: form.company.trim() || undefined,
-        address: form.address.trim() || undefined,
-        status: form.status,
+        category: form.category.trim(),
+        price: Number(form.price),
+        stock,
+        description: form.description.trim(),
       };
-      if (mode === "create") {
-        await createCustomer(payload);
-        onSaved("Customer created successfully.", true);
-      } else {
-        await updateCustomer(initial._id, payload);
-        onSaved("Customer updated successfully.", false);
-      }
+      // Only send status when the stock-driven derivation actually changes it:
+      // an explicit status can be rejected by the backend, so a no-op write is
+      // safer than re-asserting a value the server already manages.
+      if (form.status !== initial.status) payload.status = form.status;
+
+      await updateProduct(initial._id, payload);
+      onSaved("Product updated successfully.", false);
     } catch (err) {
-      if (err.status === 409) {
-        setErrors((prev) => ({ ...prev, email: "This email is already associated with another customer." }));
-      } else {
-        setApiError(err.message || "An unexpected error occurred.");
-      }
+      applyError(err);
     } finally {
       setSaving(false);
     }
   };
+
+  const statusHint =
+    hasStock && stockNum === 0
+      ? "Stock is 0, so this product is out of stock."
+      : form.status === "out_of_stock"
+        ? "Stock above 0, so out of stock is no longer available."
+        : null;
 
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      aria-labelledby="product-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div className="w-full max-h-[90vh] overflow-y-auto rounded-t-xl border border-zinc-200 bg-white sm:max-w-lg sm:rounded-xl">
+      <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-xl border border-zinc-200 bg-white sm:max-w-lg sm:rounded-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
-          <h2 id="modal-title" className="text-base font-semibold text-zinc-900">
-            {mode === "create" ? "Add Customer" : "Edit Customer"}
+          <h2 id="product-modal-title" className="text-base font-semibold text-zinc-900">
+            {mode === "create" ? "Add Product" : "Edit Product"}
           </h2>
           <button
             type="button"
@@ -250,91 +391,124 @@ function CustomerModal({ mode, initial, onClose, onSaved }) {
               role="alert"
               className="flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3.5 text-sm text-red-800"
             >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
+              <AlertCircle
+                className="mt-0.5 h-4 w-4 shrink-0 text-red-500"
+                aria-hidden="true"
+              />
               <span>{apiError}</span>
             </div>
           )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field id="c-name" label="Name" required error={errors.name}>
+            <Field id="p-name" label="Name" required error={errors.name}>
               <input
-                id="c-name"
+                id="p-name"
                 ref={firstRef}
                 type="text"
                 value={form.name}
                 onChange={set("name")}
                 disabled={saving}
-                placeholder="Jane Smith"
+                placeholder="Wireless Keyboard"
                 aria-invalid={Boolean(errors.name)}
-                aria-describedby={errors.name ? "c-name-error" : undefined}
+                aria-describedby={errors.name ? "p-name-error" : undefined}
                 className={inputCls(errors.name)}
               />
             </Field>
 
-            <Field id="c-email" label="Email" required error={errors.email}>
+            <Field
+              id="p-category"
+              label="Category"
+              required
+              error={errors.category}
+            >
               <input
-                id="c-email"
-                type="email"
-                value={form.email}
-                onChange={set("email")}
-                disabled={saving}
-                placeholder="jane@example.com"
-                aria-invalid={Boolean(errors.email)}
-                aria-describedby={errors.email ? "c-email-error" : undefined}
-                className={inputCls(errors.email)}
-              />
-            </Field>
-
-            <Field id="c-phone" label="Phone" required error={errors.phone}>
-              <input
-                id="c-phone"
-                type="tel"
-                value={form.phone}
-                onChange={set("phone")}
-                disabled={saving}
-                placeholder="+92 300 0000000"
-                aria-invalid={Boolean(errors.phone)}
-                aria-describedby={errors.phone ? "c-phone-error" : undefined}
-                className={inputCls(errors.phone)}
-              />
-            </Field>
-
-            <Field id="c-company" label="Company" error={errors.company}>
-              <input
-                id="c-company"
+                id="p-category"
                 type="text"
-                value={form.company}
-                onChange={set("company")}
+                value={form.category}
+                onChange={set("category")}
                 disabled={saving}
-                placeholder="Acme Corp (optional)"
-                className={inputCls(errors.company)}
+                placeholder="Electronics"
+                aria-invalid={Boolean(errors.category)}
+                aria-describedby={errors.category ? "p-category-error" : undefined}
+                className={inputCls(errors.category)}
+              />
+            </Field>
+
+            <Field id="p-price" label="Price" required error={errors.price}>
+              <input
+                id="p-price"
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={form.price}
+                onChange={set("price")}
+                disabled={saving}
+                placeholder="25000"
+                aria-invalid={Boolean(errors.price)}
+                aria-describedby={errors.price ? "p-price-error" : undefined}
+                className={inputCls(errors.price)}
+              />
+            </Field>
+
+            <Field id="p-stock" label="Stock" required error={errors.stock}>
+              <input
+                id="p-stock"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={form.stock}
+                onChange={setStock}
+                disabled={saving}
+                placeholder="25"
+                aria-invalid={Boolean(errors.stock)}
+                aria-describedby={errors.stock ? "p-stock-error" : undefined}
+                className={inputCls(errors.stock)}
               />
             </Field>
           </div>
 
-          <Field id="c-address" label="Address" error={errors.address}>
+          <Field
+            id="p-description"
+            label="Description"
+            error={errors.description}
+          >
             <textarea
-              id="c-address"
-              value={form.address}
-              onChange={set("address")}
+              id="p-description"
+              value={form.description}
+              onChange={set("description")}
               disabled={saving}
-              rows={2}
-              placeholder="Street, City, Country (optional)"
-              className={`${inputCls(errors.address)} resize-none`}
+              rows={3}
+              placeholder="Short product description (optional)"
+              aria-invalid={Boolean(errors.description)}
+              aria-describedby={
+                errors.description ? "p-description-error" : undefined
+              }
+              className={`${inputCls(errors.description)} resize-none`}
             />
           </Field>
 
-          <Field id="c-status" label="Status" required>
+          <Field id="p-status" label="Status" required error={errors.status}>
             <select
-              id="c-status"
+              id="p-status"
               value={form.status}
               onChange={set("status")}
               disabled={saving}
-              className={inputCls(false)}
+              aria-describedby={statusHint ? "p-status-hint" : undefined}
+              className={inputCls(errors.status)}
             >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              {statusOptions.map((value) => (
+                <option key={value} value={value}>
+                  {STATUS_LABELS[value]}
+                </option>
+              ))}
             </select>
+            {statusHint && (
+              <p id="p-status-hint" className="mt-1.5 text-xs text-zinc-500">
+                {statusHint}
+              </p>
+            )}
           </Field>
 
           {/* Actions */}
@@ -352,8 +526,14 @@ function CustomerModal({ mode, initial, onClose, onSaved }) {
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 disabled:opacity-60"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              {saving ? "Saving…" : mode === "create" ? "Add Customer" : "Save Changes"}
+              {saving && (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              )}
+              {saving
+                ? "Saving…"
+                : mode === "create"
+                  ? "Add Product"
+                  : "Save Changes"}
             </button>
           </div>
         </form>
@@ -364,7 +544,7 @@ function CustomerModal({ mode, initial, onClose, onSaved }) {
 
 // ── Delete Confirmation Modal ─────────────────────────────────────────────────
 
-function DeleteModal({ customer, onClose, onDeleted }) {
+function DeleteModal({ product, onClose, onDeleted }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -372,10 +552,10 @@ function DeleteModal({ customer, onClose, onDeleted }) {
     setDeleting(true);
     setError(null);
     try {
-      await deleteCustomer(customer._id);
+      await deleteProduct(product._id);
       onDeleted();
     } catch (err) {
-      setError(err.message || "Failed to delete customer.");
+      setError(err.message || "Failed to delete product.");
       setDeleting(false);
     }
   };
@@ -385,15 +565,18 @@ function DeleteModal({ customer, onClose, onDeleted }) {
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="delete-title"
+      aria-labelledby="product-delete-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !deleting) onClose();
+      }}
     >
       <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-6">
-        <h2 id="delete-title" className="text-base font-semibold text-zinc-900">
-          Delete Customer
+        <h2 id="product-delete-title" className="text-base font-semibold text-zinc-900">
+          Delete Product
         </h2>
         <p className="mt-2 text-sm text-zinc-600">
           Are you sure you want to delete{" "}
-          <span className="font-medium text-zinc-900">{customer.name}</span>?
+          <span className="font-medium text-zinc-900">{product.name}</span>?
           This action cannot be undone.
         </p>
         {error && (
@@ -420,7 +603,9 @@ function DeleteModal({ customer, onClose, onDeleted }) {
             disabled={deleting}
             className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 disabled:opacity-60"
           >
-            {deleting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {deleting && (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            )}
             {deleting ? "Deleting…" : "Delete"}
           </button>
         </div>
@@ -431,29 +616,41 @@ function DeleteModal({ customer, onClose, onDeleted }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function CustomersPage() {
+export default function ProductsPage() {
   // List state
-  const [customers, setCustomers] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 0 });
+  const [products, setProducts] = useState([]);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: PAGE_SIZE,
+    total: 0,
+    totalPages: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(null);
 
   // Query state
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
   const [page, setPage] = useState(1);
 
+  // Category filter options, derived from fetched products.
+  const [categories, setCategories] = useState([]);
+
   // Debounce search
   useEffect(() => {
-    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
     return () => clearTimeout(t);
   }, [search]);
 
   // Modals
-  const [modal, setModal] = useState(null); // null | { type: 'create' } | { type: 'edit', customer } | { type: 'delete', customer }
+  const [modal, setModal] = useState(null);
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -461,25 +658,35 @@ export default function CustomersPage() {
     setToast({ message, type, key: Date.now() });
   }, []);
 
-  // Load customers
+  // Load products
   const load = useCallback(async () => {
     setLoading(true);
     setListError(null);
     try {
       const params = { page, limit: PAGE_SIZE, sortBy, sortOrder };
       if (debouncedSearch) params.search = debouncedSearch;
+      if (categoryFilter) params.category = categoryFilter;
       if (statusFilter) params.status = statusFilter;
-      const res = await getCustomers(params);
-      setCustomers(res.data.customers);
+      const res = await getProducts(params);
+      setProducts(res.data.products);
       setPagination(res.data.pagination);
+      setCategories((prev) => {
+        const next = new Set(prev);
+        for (const product of res.data.products) {
+          if (product.category) next.add(product.category);
+        }
+        return [...next].sort((a, b) => a.localeCompare(b));
+      });
     } catch (err) {
-      setListError(err.message || "Failed to load customers.");
+      setListError(err.message || "Failed to load products.");
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, statusFilter, sortBy, sortOrder]);
+  }, [page, debouncedSearch, categoryFilter, statusFilter, sortBy, sortOrder]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Sorting toggle
   const handleSort = (field) => {
@@ -497,28 +704,31 @@ export default function CustomersPage() {
     setModal(null);
     showToast(message, "success");
     if (resetPage) setPage(1);
-    load();
+    else load();
   };
 
   const handleDeleted = (name) => {
     setModal(null);
     showToast(`${name} was deleted.`, "success");
-    if (customers.length === 1 && page > 1) setPage((p) => p - 1);
+    if (products.length === 1 && page > 1) setPage((p) => p - 1);
     else load();
   };
 
-  const isEmpty = !loading && !listError && customers.length === 0;
-  const hasFilters = debouncedSearch || statusFilter;
+  const isEmpty = !loading && !listError && products.length === 0;
+  const hasFilters = Boolean(debouncedSearch || statusFilter || categoryFilter);
 
   return (
     <div className="space-y-6">
       {/* Page header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Customers</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+            Products
+          </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Manage your customer records
-            {pagination.total > 0 && ` · ${pagination.total.toLocaleString()} total`}
+            Manage your product catalog
+            {pagination.total > 0 &&
+              ` · ${pagination.total.toLocaleString()} total`}
           </p>
         </div>
         <button
@@ -527,21 +737,24 @@ export default function CustomersPage() {
           className="inline-flex shrink-0 items-center gap-2 rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
-          Add Customer
+          Add Product
         </button>
       </div>
 
-      {/* Toolbar: search + filter + sort */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/* Toolbar: search + filters + sort */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         {/* Search */}
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-zinc-400" aria-hidden="true" />
+          <Search
+            className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-zinc-400"
+            aria-hidden="true"
+          />
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, phone, or company…"
-            aria-label="Search customers"
+            placeholder="Search by name, description, or category…"
+            aria-label="Search products"
             className="block w-full rounded-md border border-zinc-300 py-2 pr-9 pl-9 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
           />
           {search && (
@@ -556,33 +769,57 @@ export default function CustomersPage() {
           )}
         </div>
 
+        {/* Category filter */}
+        <select
+          value={categoryFilter}
+          onChange={(e) => {
+            setCategoryFilter(e.target.value);
+            setPage(1);
+          }}
+          aria-label="Filter by category"
+          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 lg:w-auto"
+        >
+          <option value="">All categories</option>
+          {categories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </select>
+
         {/* Status filter */}
         <select
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(1);
+          }}
           aria-label="Filter by status"
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 lg:w-auto"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
+          <option value="out_of_stock">Out of Stock</option>
         </select>
 
         {/* Sort */}
         <select
           value={`${sortBy}:${sortOrder}`}
           onChange={(e) => {
-            const [f, o] = e.target.value.split(":");
-            setSortBy(f); setSortOrder(o); setPage(1);
+            const [field, order] = e.target.value.split(":");
+            setSortBy(field);
+            setSortOrder(order);
+            setPage(1);
           }}
-          aria-label="Sort customers"
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          aria-label="Sort products"
+          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 lg:w-auto"
         >
           {SORT_FIELDS.map((f) => (
-            <Fragment key={f.value}>
-              <option key={`${f.value}:asc`} value={`${f.value}:asc`}>{f.label} ↑</option>
-              <option key={`${f.value}:desc`} value={`${f.value}:desc`}>{f.label} ↓</option>
-            </Fragment>
+            <optgroup key={f.value} label={f.label}>
+              <option value={`${f.value}:asc`}>{f.label} — ascending</option>
+              <option value={`${f.value}:desc`}>{f.label} — descending</option>
+            </optgroup>
           ))}
         </select>
       </div>
@@ -597,7 +834,7 @@ export default function CustomersPage() {
             className="flex items-center justify-center gap-2.5 py-16 text-sm text-zinc-500"
           >
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            <span>Loading customers…</span>
+            <span>Loading products…</span>
           </div>
         )}
 
@@ -607,7 +844,9 @@ export default function CustomersPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-500">
               <AlertCircle className="h-5 w-5" aria-hidden="true" />
             </div>
-            <p className="mt-3 font-medium text-zinc-900">Failed to load customers</p>
+            <p className="mt-3 font-medium text-zinc-900">
+              Failed to load products
+            </p>
             <p className="mt-1 text-sm text-zinc-500">{listError}</p>
             <button
               type="button"
@@ -624,15 +863,15 @@ export default function CustomersPage() {
         {isEmpty && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-400">
-              <Users className="h-6 w-6" aria-hidden="true" />
+              <Package className="h-6 w-6" aria-hidden="true" />
             </div>
             <p className="mt-3 font-medium text-zinc-700">
-              {hasFilters ? "No customers match your search" : "No customers yet"}
+              {hasFilters ? "No products match your filters" : "No products yet"}
             </p>
             <p className="mt-1 text-sm text-zinc-400">
               {hasFilters
                 ? "Try adjusting your search or filter criteria."
-                : "Add your first customer to get started."}
+                : "Add your first product to get started."}
             </p>
             {!hasFilters && (
               <button
@@ -641,101 +880,118 @@ export default function CustomersPage() {
                 className="mt-4 inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
-                Add Customer
+                Add Product
               </button>
             )}
           </div>
         )}
 
         {/* Table */}
-        {!loading && !listError && customers.length > 0 && (
+        {!loading && !listError && products.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Customer list">
+            <table className="w-full text-sm" aria-label="Product list">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/60">
                   {[
-                    { field: "name", label: "Customer" },
-                    { field: "email", label: "Email" },
-                    { field: "phone", label: "Phone" },
-                    { field: "company", label: "Company" },
+                    { field: "name", label: "Product" },
+                    { field: "category", label: "Category" },
+                    { field: "price", label: "Price", numeric: true },
+                    { field: "stock", label: "Stock", numeric: true },
                     { field: "status", label: "Status" },
-                  ].map(({ field, label }) => (
+                  ].map(({ field, label, numeric }) => (
                     <th
                       key={field}
                       scope="col"
-                      className="px-5 py-3 text-left"
+                      className={`px-5 py-3 ${numeric ? "text-right" : "text-left"}`}
                     >
                       <button
                         type="button"
                         onClick={() => handleSort(field)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 focus:outline-none"
+                        className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 focus:outline-none ${
+                          numeric ? "flex-row-reverse" : ""
+                        }`}
                       >
                         {label}
-                        <SortIcon field={field} active={sortBy === field} dir={sortOrder} />
+                        <SortIcon
+                          field={field}
+                          active={sortBy === field}
+                          dir={sortOrder}
+                        />
                       </button>
                     </th>
                   ))}
-                  <th scope="col" className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  <th
+                    scope="col"
+                    className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400"
+                  >
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {customers.map((c) => (
-                  <tr key={c._id} className="hover:bg-zinc-50/50">
-                    {/* Customer */}
+                {products.map((p) => (
+                  <tr key={p._id} className="hover:bg-zinc-50/50">
+                    {/* Product */}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-semibold text-zinc-600 uppercase">
-                          {c.name.charAt(0)}
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                          <Package className="h-4 w-4" aria-hidden="true" />
                         </div>
-                        <span className="font-medium text-zinc-900">{c.name}</span>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-zinc-900">
+                            {p.name}
+                          </p>
+                          {p.description && (
+                            <p className="mt-0.5 max-w-[280px] truncate text-xs text-zinc-400">
+                              {p.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    {/* Email */}
+                    {/* Category */}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5 text-zinc-600">
-                        <Mail className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-                        <span className="truncate max-w-[180px]">{c.email}</span>
+                        <Tags
+                          className="h-3.5 w-3.5 shrink-0 text-zinc-400"
+                          aria-hidden="true"
+                        />
+                        <span className="truncate max-w-[160px]">
+                          {p.category}
+                        </span>
                       </div>
                     </td>
-                    {/* Phone */}
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5 text-zinc-600">
-                        <Phone className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-                        {c.phone}
-                      </div>
+                    {/* Price */}
+                    <td className="px-5 py-3.5 text-right tabular-nums text-zinc-900">
+                      {formatPrice(p.price)}
                     </td>
-                    {/* Company */}
-                    <td className="px-5 py-3.5">
-                      {c.company ? (
-                        <div className="flex items-center gap-1.5 text-zinc-600">
-                          <Building2 className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-                          <span className="truncate max-w-[140px]">{c.company}</span>
-                        </div>
-                      ) : (
-                        <span className="text-zinc-300">—</span>
-                      )}
+                    {/* Stock */}
+                    <td
+                      className={`px-5 py-3.5 text-right tabular-nums ${
+                        p.stock === 0 ? "font-medium text-amber-700" : "text-zinc-600"
+                      }`}
+                    >
+                      {p.stock.toLocaleString()}
                     </td>
                     {/* Status */}
                     <td className="px-5 py-3.5">
-                      <StatusBadge status={c.status} />
+                      <StatusBadge status={p.status} />
                     </td>
                     {/* Actions */}
                     <td className="px-5 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => setModal({ type: "edit", customer: c })}
-                          aria-label={`Edit ${c.name}`}
+                          onClick={() => setModal({ type: "edit", product: p })}
+                          aria-label={`Edit ${p.name}`}
                           className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => setModal({ type: "delete", customer: c })}
-                          aria-label={`Delete ${c.name}`}
+                          onClick={() => setModal({ type: "delete", product: p })}
+                          aria-label={`Delete ${p.name}`}
                           className="rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-600"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -758,7 +1014,11 @@ export default function CustomersPage() {
                 {(page - 1) * PAGE_SIZE + 1}–
                 {Math.min(page * PAGE_SIZE, pagination.total)}
               </span>{" "}
-              of <span className="font-medium text-zinc-700">{pagination.total}</span> customers
+              of{" "}
+              <span className="font-medium text-zinc-700">
+                {pagination.total}
+              </span>{" "}
+              products
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -789,25 +1049,25 @@ export default function CustomersPage() {
 
       {/* Modals */}
       {modal?.type === "create" && (
-        <CustomerModal
+        <ProductModal
           mode="create"
           onClose={() => setModal(null)}
           onSaved={(msg) => handleSaved(msg, true)}
         />
       )}
       {modal?.type === "edit" && (
-        <CustomerModal
+        <ProductModal
           mode="edit"
-          initial={modal.customer}
+          initial={modal.product}
           onClose={() => setModal(null)}
           onSaved={(msg) => handleSaved(msg, false)}
         />
       )}
       {modal?.type === "delete" && (
         <DeleteModal
-          customer={modal.customer}
+          product={modal.product}
           onClose={() => setModal(null)}
-          onDeleted={() => handleDeleted(modal.customer.name)}
+          onDeleted={() => handleDeleted(modal.product.name)}
         />
       )}
 
