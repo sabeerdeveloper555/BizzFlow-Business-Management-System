@@ -1,17 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import {
-  Plus,
-  Search,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  AlertCircle,
-  Loader2,
-  RefreshCw,
-  Eye,
-  Trash2,
-  ShoppingBag,
-} from "lucide-react";
+import { Plus, Eye, Trash2, ShoppingBag } from "lucide-react";
 import {
   getOrders,
   getOrder,
@@ -21,6 +9,26 @@ import {
 } from "../services/orders/orderService.js";
 import { getCustomers } from "../services/customers/customerService.js";
 import { getProducts } from "../services/products/productService.js";
+import {
+  Button,
+  Badge,
+  Card,
+  Alert,
+  Modal,
+  ConfirmModal,
+  Toast,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  SearchInput,
+  FilterSelect,
+  Pagination,
+  IconButton,
+  LoadingState,
+  Field,
+  Input,
+  Select,
+} from "../components/ui/index.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +46,15 @@ const STATUS_LABELS = {
   processing: "Processing",
   completed: "Completed",
   cancelled: "Cancelled",
+};
+
+// Semantic tones follow the app-wide status rules:
+// pending → amber, processing → neutral, completed → emerald, cancelled → red.
+const STATUS_TONES = {
+  pending: "warning",
+  processing: "neutral",
+  completed: "success",
+  cancelled: "danger",
 };
 
 // Valid forward transitions, mirroring the backend state machine. Cancel is
@@ -85,180 +102,11 @@ const formatDateTime = (iso) => {
 
 const orDash = (value) => (value && String(value).trim() ? value : "—");
 
-// ── Small helpers ─────────────────────────────────────────────────────────────
-
 function StatusBadge({ status }) {
-  const map = {
-    pending: {
-      pill: "border-amber-200 bg-amber-50 text-amber-700",
-      dot: "bg-amber-500",
-    },
-    processing: {
-      pill: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      dot: "bg-emerald-500",
-    },
-    completed: {
-      pill: "border-zinc-200 bg-zinc-50 text-zinc-500",
-      dot: "bg-zinc-400",
-    },
-    cancelled: {
-      pill: "border-red-200 bg-red-50 text-red-700",
-      dot: "bg-red-500",
-    },
-  };
-  const style = map[status] || map.completed;
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-medium ${style.pill}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+    <Badge tone={STATUS_TONES[status] ?? "neutral"} dot>
       {STATUS_LABELS[status] || status}
-    </span>
-  );
-}
-
-// ── Toast (lightweight) ───────────────────────────────────────────────────────
-
-function Toast({ message, type, onDismiss }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 3500);
-    return () => clearTimeout(t);
-  }, [onDismiss]);
-
-  const cls =
-    type === "success"
-      ? "bg-zinc-900 text-white"
-      : "border border-red-200 bg-red-50 text-red-800";
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={`fixed bottom-5 right-5 z-[60] flex items-center gap-2.5 rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${cls}`}
-    >
-      {type === "error" && (
-        <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-      )}
-      <span>{message}</span>
-      <button
-        onClick={onDismiss}
-        aria-label="Dismiss notification"
-        className="ml-2 opacity-60 hover:opacity-100 focus:outline-none"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// ── Field (reusable) ─────────────────────────────────────────────────────────
-
-function Field({ id, label, error, required, children }) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-zinc-800">
-        {label}
-        {required && (
-          <span className="ml-0.5 text-red-500" aria-hidden="true">
-            *
-          </span>
-        )}
-      </label>
-      <div className="mt-1.5">{children}</div>
-      {error && (
-        <p
-          id={`${id}-error`}
-          role="alert"
-          className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600"
-        >
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-const inputCls = (hasError) =>
-  `block w-full rounded-md border px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 transition-colors focus:outline-none focus:ring-2 ${
-    hasError
-      ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-      : "border-zinc-300 focus:border-zinc-900 focus:ring-zinc-900"
-  } disabled:cursor-not-allowed disabled:bg-zinc-100`;
-
-// ── Confirmation modal (cancel / delete) ──────────────────────────────────────
-
-function ConfirmModal({ title, message, confirmLabel, action, onCancel, onDone }) {
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Escape" && !submitting) onCancel();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onCancel, submitting]);
-
-  const handleConfirm = async () => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await action();
-      onDone();
-    } catch (err) {
-      setError(err.message || "The request could not be completed.");
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onCancel();
-      }}
-    >
-      <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-6">
-        <h2 id="confirm-title" className="text-base font-semibold text-zinc-900">
-          {title}
-        </h2>
-        <div className="mt-2 text-sm text-zinc-600">{message}</div>
-        {error && (
-          <div
-            role="alert"
-            className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-          >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>{error}</span>
-          </div>
-        )}
-        <div className="mt-5 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60"
-          >
-            Keep Order
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={submitting}
-            className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 disabled:opacity-60"
-          >
-            {submitting && (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            )}
-            {submitting ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Badge>
   );
 }
 
@@ -279,21 +127,9 @@ function CreateOrderModal({ onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const firstRef = useRef(null);
 
-  // The customer select only renders after the picker data resolves, so focus
-  // it once loading finishes rather than on mount (when it is not yet present).
   useEffect(() => {
-    if (!loadingPickers && !pickerError) {
-      firstRef.current?.focus();
-    }
+    if (!loadingPickers && !pickerError) firstRef.current?.focus();
   }, [loadingPickers, pickerError]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
 
   useEffect(() => {
     let active = true;
@@ -302,18 +138,8 @@ function CreateOrderModal({ onClose, onCreated }) {
       setPickerError(null);
       try {
         const [custRes, prodRes] = await Promise.all([
-          getCustomers({
-            status: "active",
-            limit: 100,
-            sortBy: "name",
-            sortOrder: "asc",
-          }),
-          getProducts({
-            status: "active",
-            limit: 100,
-            sortBy: "name",
-            sortOrder: "asc",
-          }),
+          getCustomers({ status: "active", limit: 100, sortBy: "name", sortOrder: "asc" }),
+          getProducts({ status: "active", limit: 100, sortBy: "name", sortOrder: "asc" }),
         ]);
         if (!active) return;
         setCustomers(custRes.data.customers || []);
@@ -326,9 +152,7 @@ function CreateOrderModal({ onClose, onCreated }) {
       }
     };
     loadPickers();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
   const productById = useMemo(() => {
@@ -337,22 +161,13 @@ function CreateOrderModal({ onClose, onCreated }) {
     return map;
   }, [products]);
 
-  // Clear a specific validation error as the user fixes it.
   const clearError = (key) => {
-    if (errors[key]) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
+    if (errors[key]) setErrors((prev) => { const next = { ...prev }; delete next[key]; return next; });
     if (apiError) setApiError(null);
   };
 
   const updateItem = (index, patch) => {
-    setItems((prev) =>
-      prev.map((it, i) => (i === index ? { ...it, ...patch } : it)),
-    );
+    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
   };
 
   const handleProductChange = (index, productId) => {
@@ -368,13 +183,9 @@ function CreateOrderModal({ onClose, onCreated }) {
   const addItem = () => setItems((prev) => [...prev, EMPTY_ITEM]);
 
   const removeItem = (index) => {
-    setItems((prev) =>
-      prev.length <= 1 ? prev : prev.filter((_, i) => i !== index),
-    );
+    setItems((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   };
 
-  // Options for a row: every active product except those chosen in other rows,
-  // plus whatever this row already has selected.
   const optionsForRow = (index) => {
     const usedElsewhere = new Set(
       items.filter((_, i) => i !== index).map((it) => it.product).filter(Boolean),
@@ -396,12 +207,8 @@ function CreateOrderModal({ onClose, onCreated }) {
 
   const validate = () => {
     const errs = {};
-
     if (!customer) errs.customer = "Please select a customer.";
-
-    if (items.length === 0) {
-      errs.items = "Add at least one product.";
-    }
+    if (items.length === 0) errs.items = "Add at least one product.";
 
     const seen = new Set();
     items.forEach((item, index) => {
@@ -430,7 +237,6 @@ function CreateOrderModal({ onClose, onCreated }) {
     return Object.keys(errs).length === 0;
   };
 
-  // Map backend field errors back onto the relevant inputs.
   const applyApiError = (err) => {
     const message = err.message || "The request could not be completed.";
     const fieldErrors = {};
@@ -446,8 +252,6 @@ function CreateOrderModal({ onClose, onCreated }) {
     if (Object.keys(fieldErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...fieldErrors }));
     }
-    // Business errors (inactive customer / product, out of stock, etc.) surface
-    // as a banner so the backend message is never hidden.
     setApiError(message);
   };
 
@@ -480,314 +284,180 @@ function CreateOrderModal({ onClose, onCreated }) {
     }
   };
 
-  const selectCls = "block w-full appearance-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100";
-
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="order-create-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !saving) onClose();
-      }}
-    >
-      <div className="flex max-h-[90vh] w-full flex-col rounded-t-xl border border-zinc-200 bg-white sm:max-w-2xl sm:rounded-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
-          <h2 id="order-create-title" className="text-base font-semibold text-zinc-900">
-            New Order
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            aria-label="Close dialog"
-            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60"
+    <Modal
+      title="New Order"
+      titleId="order-create-title"
+      onClose={onClose}
+      size="2xl"
+      locked={saving}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="create-order-form"
+            loading={saving}
+            disabled={loadingPickers || Boolean(pickerError)}
           >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+            {saving ? "Creating…" : "Create Order"}
+          </Button>
+        </>
+      }
+    >
+      <form id="create-order-form" onSubmit={handleSubmit} noValidate className="space-y-5">
+        {apiError && <Alert variant="danger">{apiError}</Alert>}
 
-        {/* Body */}
-        <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-            {apiError && (
-              <div
-                role="alert"
-                className="flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3.5 text-sm text-red-800"
+        {loadingPickers && <LoadingState label="Loading order options…" className="py-10" />}
+
+        {!loadingPickers && pickerError && <Alert variant="danger">{pickerError}</Alert>}
+
+        {!loadingPickers && !pickerError && (
+          <>
+            <Field id="o-customer" label="Customer" required error={errors.customer}>
+              <Select
+                id="o-customer"
+                ref={firstRef}
+                value={customer}
+                onChange={(e) => { setCustomer(e.target.value); clearError("customer"); }}
+                disabled={saving}
+                invalid={Boolean(errors.customer)}
+                aria-describedby={errors.customer ? "o-customer-error" : undefined}
               >
-                <AlertCircle
-                  className="mt-0.5 h-4 w-4 shrink-0 text-red-500"
-                  aria-hidden="true"
-                />
-                <span>{apiError}</span>
-              </div>
-            )}
-
-            {loadingPickers && (
-              <div
-                role="status"
-                aria-live="polite"
-                className="flex items-center justify-center gap-2.5 py-10 text-sm text-zinc-500"
-              >
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                <span>Loading order options…</span>
-              </div>
-            )}
-
-            {!loadingPickers && pickerError && (
-              <div
-                role="alert"
-                className="flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3.5 text-sm text-red-800"
-              >
-                <AlertCircle
-                  className="mt-0.5 h-4 w-4 shrink-0 text-red-500"
-                  aria-hidden="true"
-                />
-                <span>{pickerError}</span>
-              </div>
-            )}
-
-            {!loadingPickers && !pickerError && (
-              <>
-                {/* Customer */}
-                <Field
-                  id="o-customer"
-                  label="Customer"
-                  required
-                  error={errors.customer}
-                >
-                  <select
-                    id="o-customer"
-                    ref={firstRef}
-                    value={customer}
-                    onChange={(e) => {
-                      setCustomer(e.target.value);
-                      clearError("customer");
-                    }}
-                    disabled={saving}
-                    aria-invalid={Boolean(errors.customer)}
-                    aria-describedby={
-                      errors.customer ? "o-customer-error" : undefined
-                    }
-                    className={inputCls(errors.customer)}
-                  >
-                    <option value="">Select a customer…</option>
-                    {customers.map((c) => (
-                      <option key={c._id} value={c._id}>
-                        {c.name}
-                        {c.email ? ` — ${c.email}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {customers.length === 0 && (
-                    <p className="mt-1.5 text-xs text-zinc-500">
-                      No active customers available to order for.
-                    </p>
-                  )}
-                </Field>
-
-                {/* Line items */}
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="block text-sm font-medium text-zinc-800">
-                      Items
-                      <span className="ml-0.5 text-red-500" aria-hidden="true">
-                        *
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={addItem}
-                      disabled={saving}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60"
-                    >
-                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                      Add Item
-                    </button>
-                  </div>
-                  {errors.items && (
-                    <p
-                      role="alert"
-                      className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600"
-                    >
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                      {errors.items}
-                    </p>
-                  )}
-
-                  <div className="mt-2 space-y-3">
-                    {items.map((item, index) => {
-                      const product = productById.get(item.product);
-                      const lineTotal = computeLineTotal(item);
-                      const rowOptions = optionsForRow(index);
-                      // Keep the current selection visible even if it's excluded elsewhere.
-                      const currentMissing =
-                        item.product &&
-                        !rowOptions.some((p) => p._id === item.product);
-                      return (
-                        <div
-                          key={index}
-                          className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3"
-                        >
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
-                            <div className="sm:col-span-6">
-                              <label
-                                htmlFor={`o-product-${index}`}
-                                className="block text-xs font-medium text-zinc-500"
-                              >
-                                Product
-                              </label>
-                              <select
-                                id={`o-product-${index}`}
-                                value={item.product}
-                                onChange={(e) =>
-                                  handleProductChange(index, e.target.value)
-                                }
-                                disabled={saving}
-                                aria-invalid={Boolean(errors[`p${index}`])}
-                                className={`mt-1 ${inputCls(errors[`p${index}`])}`}
-                              >
-                                <option value="">Select a product…</option>
-                                {currentMissing && (
-                                  <option value={item.product}>
-                                    {product?.name || item.product}
-                                  </option>
-                                )}
-                                {rowOptions.map((p) => (
-                                  <option key={p._id} value={p._id}>
-                                    {p.name} — {p.category} (stock {p.stock})
-                                  </option>
-                                ))}
-                              </select>
-                              {errors[`p${index}`] && (
-                                <p
-                                  role="alert"
-                                  className="mt-1 flex items-center gap-1.5 text-xs font-medium text-red-600"
-                                >
-                                  <AlertCircle
-                                    className="h-3.5 w-3.5 shrink-0"
-                                    aria-hidden="true"
-                                  />
-                                  {errors[`p${index}`]}
-                                </p>
-                              )}
-                            </div>
-
-                            <div className="sm:col-span-3">
-                              <label
-                                htmlFor={`o-quantity-${index}`}
-                                className="block text-xs font-medium text-zinc-500"
-                              >
-                                Quantity
-                              </label>
-                              <input
-                                id={`o-quantity-${index}`}
-                                type="number"
-                                min="1"
-                                step="1"
-                                inputMode="numeric"
-                                value={item.quantity}
-                                onChange={(e) =>
-                                  handleQuantityChange(index, e.target.value)
-                                }
-                                disabled={saving || !product}
-                                aria-invalid={Boolean(errors[`q${index}`])}
-                                className={`mt-1 ${inputCls(errors[`q${index}`])}`}
-                              />
-                              {errors[`q${index}`] ? (
-                                <p
-                                  role="alert"
-                                  className="mt-1 flex items-center gap-1.5 text-xs font-medium text-red-600"
-                                >
-                                  <AlertCircle
-                                    className="h-3.5 w-3.5 shrink-0"
-                                    aria-hidden="true"
-                                  />
-                                  {errors[`q${index}`]}
-                                </p>
-                              ) : (
-                                product && (
-                                  <p className="mt-1 text-xs text-zinc-500">
-                                    Available stock: {product.stock}
-                                  </p>
-                                )
-                              )}
-                            </div>
-
-                            <div className="flex items-end justify-between sm:col-span-3 sm:flex-col sm:items-end sm:gap-1">
-                              <div className="text-right">
-                                <span className="block text-xs font-medium text-zinc-500">
-                                  Line total
-                                </span>
-                                <span className="block text-sm font-semibold tabular-nums text-zinc-900">
-                                  {lineTotal === null ? "—" : formatPrice(lineTotal)}
-                                </span>
-                                {product && (
-                                  <span className="block text-xs text-zinc-400">
-                                    @{formatPrice(product.price)} each
-                                  </span>
-                                )}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => removeItem(index)}
-                                disabled={saving || items.length <= 1}
-                                aria-label="Remove item"
-                                className="mt-2 rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:cursor-not-allowed disabled:opacity-30"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Running total */}
-                <div className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3">
-                  <span className="text-sm font-medium text-zinc-600">
-                    Order total
-                  </span>
-                  <span className="text-base font-semibold tabular-nums text-zinc-900">
-                    {formatPrice(orderTotal)}
-                  </span>
-                </div>
-                <p className="-mt-2 text-xs text-zinc-400">
-                  Prices and total are confirmed by the server when the order is
-                  created.
+                <option value="">Select a customer…</option>
+                {customers.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                    {c.email ? ` — ${c.email}` : ""}
+                  </option>
+                ))}
+              </Select>
+              {customers.length === 0 && (
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  No active customers available to order for.
                 </p>
-              </>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex justify-end gap-3 border-t border-zinc-100 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || loadingPickers || Boolean(pickerError)}
-              className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 disabled:opacity-60"
-            >
-              {saving && (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               )}
-              {saving ? "Creating…" : "Create Order"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+            </Field>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="block text-sm font-medium text-zinc-800">
+                  Items
+                  <span className="ml-0.5 text-red-500" aria-hidden="true">*</span>
+                </span>
+                <Button variant="secondary" size="sm" icon={Plus} onClick={addItem} disabled={saving}>
+                  Add Item
+                </Button>
+              </div>
+              {errors.items && (
+                <p role="alert" className="mt-1.5 text-xs font-medium text-red-600">{errors.items}</p>
+              )}
+
+              <div className="mt-2 space-y-3">
+                {items.map((item, index) => {
+                  const product = productById.get(item.product);
+                  const lineTotal = computeLineTotal(item);
+                  const rowOptions = optionsForRow(index);
+                  const currentMissing =
+                    item.product && !rowOptions.some((p) => p._id === item.product);
+                  return (
+                    <div key={index} className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
+                        <div className="sm:col-span-6">
+                          <label htmlFor={`o-product-${index}`} className="block text-xs font-medium text-zinc-500">
+                            Product
+                          </label>
+                          <Select
+                            id={`o-product-${index}`}
+                            value={item.product}
+                            onChange={(e) => handleProductChange(index, e.target.value)}
+                            disabled={saving}
+                            invalid={Boolean(errors[`p${index}`])}
+                            className="mt-1"
+                          >
+                            <option value="">Select a product…</option>
+                            {currentMissing && (
+                              <option value={item.product}>{product?.name || item.product}</option>
+                            )}
+                            {rowOptions.map((p) => (
+                              <option key={p._id} value={p._id}>
+                                {p.name} — {p.category} (stock {p.stock})
+                              </option>
+                            ))}
+                          </Select>
+                          {errors[`p${index}`] && (
+                            <p role="alert" className="mt-1 text-xs font-medium text-red-600">
+                              {errors[`p${index}`]}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label htmlFor={`o-quantity-${index}`} className="block text-xs font-medium text-zinc-500">
+                            Quantity
+                          </label>
+                          <Input
+                            id={`o-quantity-${index}`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            inputMode="numeric"
+                            value={item.quantity}
+                            onChange={(e) => handleQuantityChange(index, e.target.value)}
+                            disabled={saving || !product}
+                            invalid={Boolean(errors[`q${index}`])}
+                            className="mt-1"
+                          />
+                          {errors[`q${index}`] ? (
+                            <p role="alert" className="mt-1 text-xs font-medium text-red-600">
+                              {errors[`q${index}`]}
+                            </p>
+                          ) : (
+                            product && (
+                              <p className="mt-1 text-xs text-zinc-500">Available stock: {product.stock}</p>
+                            )
+                          )}
+                        </div>
+
+                        <div className="flex items-end justify-between sm:col-span-3 sm:flex-col sm:items-end sm:gap-1">
+                          <div className="text-right">
+                            <span className="block text-xs font-medium text-zinc-500">Line total</span>
+                            <span className="block text-sm font-semibold tabular-nums text-zinc-900">
+                              {lineTotal === null ? "—" : formatPrice(lineTotal)}
+                            </span>
+                            {product && (
+                              <span className="block text-xs text-zinc-400">@{formatPrice(product.price)} each</span>
+                            )}
+                          </div>
+                          <IconButton
+                            icon={Trash2}
+                            tone="danger"
+                            label="Remove item"
+                            onClick={() => removeItem(index)}
+                            disabled={saving || items.length <= 1}
+                            className="mt-2 disabled:cursor-not-allowed disabled:opacity-30"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3">
+              <span className="text-sm font-medium text-zinc-600">Order total</span>
+              <span className="text-base font-semibold tabular-nums text-zinc-900">{formatPrice(orderTotal)}</span>
+            </div>
+            <p className="-mt-2 text-xs text-zinc-400">
+              Prices and total are confirmed by the server when the order is created.
+            </p>
+          </>
+        )}
+      </form>
+    </Modal>
   );
 }
 
@@ -798,15 +468,7 @@ function OrderDetailModal({ orderId, onClose, notify, reloadList }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState(null); // { kind: 'cancel' | 'delete', to }
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Escape" && !busy) onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose, busy]);
+  const [confirm, setConfirm] = useState(null); // { kind: 'cancel' | 'delete' }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -821,16 +483,14 @@ function OrderDetailModal({ orderId, onClose, notify, reloadList }) {
     }
   }, [orderId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const changeStatus = async (to, toastMessage) => {
     setBusy(true);
     try {
       await updateOrderStatus(order._id, to);
       notify(toastMessage, "success");
-      await load(); // PUT response is unpopulated — refetch to refresh.
+      await load();
       reloadList();
     } catch (err) {
       notify(err.message || "Failed to update order.", "error");
@@ -840,11 +500,8 @@ function OrderDetailModal({ orderId, onClose, notify, reloadList }) {
   };
 
   const runAction = async () => {
-    if (confirm.kind === "cancel") {
-      await updateOrderStatus(order._id, "cancelled");
-    } else {
-      await deleteOrder(order._id);
-    }
+    if (confirm.kind === "cancel") await updateOrderStatus(order._id, "cancelled");
+    else await deleteOrder(order._id);
   };
 
   const onConfirmDone = () => {
@@ -863,253 +520,141 @@ function OrderDetailModal({ orderId, onClose, notify, reloadList }) {
   const actions = order ? STATUS_ACTIONS[order.status] || [] : [];
   const canDelete = order ? ORDERABLE_STATUS[order.status]?.canDelete : false;
 
+  const footer =
+    !loading && !error && order ? (
+      <>
+        {canDelete && (
+          <Button variant="dangerSoft" icon={Trash2} onClick={() => setConfirm({ kind: "delete" })} disabled={busy} className="mr-auto">
+            Delete
+          </Button>
+        )}
+        {actions.map((action) =>
+          action.to === "cancelled" ? (
+            <Button key={action.to} variant="dangerSoft" disabled={busy} onClick={() => setConfirm({ kind: "cancel", to: action.to })}>
+              Cancel Order
+            </Button>
+          ) : (
+            <Button key={action.to} disabled={busy} onClick={() => changeStatus(action.to, action.toast)}>
+              {action.label}
+            </Button>
+          ),
+        )}
+        <Button variant="secondary" onClick={onClose} disabled={busy}>
+          Close
+        </Button>
+      </>
+    ) : null;
+
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="order-detail-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
-    >
-      <div className="flex max-h-[90vh] w-full flex-col rounded-t-xl border border-zinc-200 bg-white sm:max-w-xl sm:rounded-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
-          <h2 id="order-detail-title" className="text-base font-semibold text-zinc-900">
-            Order Details
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close dialog"
-            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <>
+      <Modal title="Order Details" titleId="order-detail-title" onClose={onClose} size="xl" locked={busy} footer={footer}>
+        {loading && <LoadingState label="Loading order…" className="py-12" />}
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {loading && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="flex items-center justify-center gap-2.5 py-12 text-sm text-zinc-500"
-            >
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              <span>Loading order…</span>
+        {!loading && error && <ErrorState title="Failed to load order" message={error} onRetry={load} />}
+
+        {!loading && !error && order && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <StatusBadge status={order.status} />
+              <p className="text-xs text-zinc-500">Placed {formatDateTime(order.createdAt)}</p>
             </div>
-          )}
 
-          {!loading && error && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-500">
-                <AlertCircle className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <p className="mt-3 font-medium text-zinc-900">Failed to load order</p>
-              <p className="mt-1 text-sm text-zinc-500">{error}</p>
-              <button
-                type="button"
-                onClick={load}
-                className="mt-4 inline-flex items-center gap-2 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              >
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                Retry
-              </button>
-            </div>
-          )}
-
-          {!loading && !error && order && (
-            <div className="space-y-6">
-              {/* Meta */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <StatusBadge status={order.status} />
-                <p className="text-xs text-zinc-500">
-                  Placed {formatDateTime(order.createdAt)}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Customer</h3>
+              <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 text-sm">
+                <p className="font-medium text-zinc-900">{orDash(order.customer?.name)}</p>
+                <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                  <div className="flex gap-1.5">
+                    <dt className="text-zinc-500">Email:</dt>
+                    <dd className="text-zinc-700">{orDash(order.customer?.email)}</dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="text-zinc-500">Phone:</dt>
+                    <dd className="text-zinc-700">{orDash(order.customer?.phone)}</dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="text-zinc-500">Company:</dt>
+                    <dd className="text-zinc-700">{orDash(order.customer?.company)}</dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="text-zinc-500">Status:</dt>
+                    <dd className="text-zinc-700">{orDash(order.customer?.status)}</dd>
+                  </div>
+                </dl>
+                <p className="mt-1.5 text-zinc-700">
+                  <span className="text-zinc-500">Address: </span>
+                  {orDash(order.customer?.address)}
                 </p>
               </div>
-
-              {/* Customer */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Customer
-                </h3>
-                <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 text-sm">
-                  <p className="font-medium text-zinc-900">
-                    {orDash(order.customer?.name)}
-                  </p>
-                  <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-                    <div className="flex gap-1.5">
-                      <dt className="text-zinc-500">Email:</dt>
-                      <dd className="text-zinc-700">{orDash(order.customer?.email)}</dd>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <dt className="text-zinc-500">Phone:</dt>
-                      <dd className="text-zinc-700">{orDash(order.customer?.phone)}</dd>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <dt className="text-zinc-500">Company:</dt>
-                      <dd className="text-zinc-700">{orDash(order.customer?.company)}</dd>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <dt className="text-zinc-500">Status:</dt>
-                      <dd className="text-zinc-700">{orDash(order.customer?.status)}</dd>
-                    </div>
-                  </dl>
-                  <p className="mt-1.5 text-zinc-700">
-                    <span className="text-zinc-500">Address: </span>
-                    {orDash(order.customer?.address)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Items */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Items
-                </h3>
-                <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-zinc-100 bg-zinc-50/60 text-left">
-                        <th scope="col" className="px-4 py-2.5 font-medium text-zinc-500">
-                          Product
-                        </th>
-                        <th scope="col" className="px-4 py-2.5 text-right font-medium text-zinc-500">
-                          Qty
-                        </th>
-                        <th scope="col" className="px-4 py-2.5 text-right font-medium text-zinc-500">
-                          Unit price
-                        </th>
-                        <th scope="col" className="px-4 py-2.5 text-right font-medium text-zinc-500">
-                          Line total
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {(order.items || []).map((item, index) => (
-                        <tr key={item.product?._id || index}>
-                          <td className="px-4 py-2.5">
-                            <p className="font-medium text-zinc-900">
-                              {orDash(item.product?.name)}
-                            </p>
-                            {item.product?.category && (
-                              <p className="text-xs text-zinc-400">
-                                {item.product.category}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700">
-                            {item.quantity}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700">
-                            {formatPrice(item.price)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-zinc-900">
-                            {formatPrice(item.price * item.quantity)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-zinc-200 bg-zinc-50/60">
-                        <td
-                          colSpan={3}
-                          className="px-4 py-2.5 text-right font-medium text-zinc-600"
-                        >
-                          Total
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-sm font-semibold tabular-nums text-zinc-900">
-                          {formatPrice(order.totalAmount)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-
-              {/* Timestamps */}
-              <dl className="grid grid-cols-1 gap-1 text-xs text-zinc-500 sm:grid-cols-2">
-                <div>
-                  <dt className="inline font-medium text-zinc-600">Created: </dt>
-                  <dd className="inline">{formatDateTime(order.createdAt)}</dd>
-                </div>
-                <div>
-                  <dt className="inline font-medium text-zinc-600">Last updated: </dt>
-                  <dd className="inline">{formatDateTime(order.updatedAt)}</dd>
-                </div>
-              </dl>
             </div>
-          )}
-        </div>
 
-        {/* Footer actions */}
-        {!loading && !error && order && (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 px-6 py-4">
-            {canDelete && (
-              <button
-                type="button"
-                onClick={() => setConfirm({ kind: "delete" })}
-                disabled={busy}
-                className="mr-auto inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-60"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                Delete
-              </button>
-            )}
-            {actions.map((action) => (
-              <button
-                key={action.to}
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  action.confirm
-                    ? setConfirm({ kind: "cancel", to: action.to })
-                    : changeStatus(action.to, action.toast)
-                }
-                className={
-                  action.to === "cancelled"
-                    ? "rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-60"
-                    : "rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 disabled:opacity-60"
-                }
-              >
-                {action.label === "Cancel" ? "Cancel Order" : action.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60"
-            >
-              Close
-            </button>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Items</h3>
+              <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-100 bg-zinc-50/60 text-left">
+                      <th scope="col" className="px-4 py-2.5 font-medium text-zinc-500">Product</th>
+                      <th scope="col" className="px-4 py-2.5 text-right font-medium text-zinc-500">Qty</th>
+                      <th scope="col" className="px-4 py-2.5 text-right font-medium text-zinc-500">Unit price</th>
+                      <th scope="col" className="px-4 py-2.5 text-right font-medium text-zinc-500">Line total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {(order.items || []).map((item, index) => (
+                      <tr key={item.product?._id || index}>
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium text-zinc-900">{orDash(item.product?.name)}</p>
+                          {item.product?.category && (
+                            <p className="text-xs text-zinc-400">{item.product.category}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700">{item.quantity}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700">{formatPrice(item.price)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-zinc-900">
+                          {formatPrice(item.price * item.quantity)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-zinc-200 bg-zinc-50/60">
+                      <td colSpan={3} className="px-4 py-2.5 text-right font-medium text-zinc-600">Total</td>
+                      <td className="px-4 py-2.5 text-right text-sm font-semibold tabular-nums text-zinc-900">
+                        {formatPrice(order.totalAmount)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-1 gap-1 text-xs text-zinc-500 sm:grid-cols-2">
+              <div>
+                <dt className="inline font-medium text-zinc-600">Created: </dt>
+                <dd className="inline">{formatDateTime(order.createdAt)}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-zinc-600">Last updated: </dt>
+                <dd className="inline">{formatDateTime(order.updatedAt)}</dd>
+              </div>
+            </dl>
           </div>
         )}
-      </div>
+      </Modal>
 
       {confirm && (
         <ConfirmModal
           title={confirm.kind === "cancel" ? "Cancel Order" : "Delete Order"}
           confirmLabel={confirm.kind === "cancel" ? "Cancel Order" : "Delete"}
+          cancelLabel="Keep Order"
           message={
             confirm.kind === "cancel" ? (
-              <p>
-                Cancelling this order will restore its reserved stock. This
-                cannot be undone.
-              </p>
+              <p>Cancelling this order will restore its reserved stock. This cannot be undone.</p>
             ) : order?.status === "cancelled" ? (
-              <p>
-                Are you sure you want to delete this cancelled order? Its stock
-                was already restored during cancellation.
-              </p>
+              <p>Are you sure you want to delete this cancelled order? Its stock was already restored during cancellation.</p>
             ) : (
-              <p>
-                Deleting this order will restore its reserved stock. This action
-                cannot be undone.
-              </p>
+              <p>Deleting this order will restore its reserved stock. This action cannot be undone.</p>
             )
           }
           action={runAction}
@@ -1117,26 +662,19 @@ function OrderDetailModal({ orderId, onClose, notify, reloadList }) {
           onDone={onConfirmDone}
         />
       )}
-    </div>
+    </>
   );
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function OrdersPage() {
-  // List state
   const [orders, setOrders] = useState([]);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: PAGE_SIZE,
-    total: 0,
-    totalPages: 0,
-  });
+  const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 0 });
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(null);
   const [rowBusy, setRowBusy] = useState(null);
 
-  // Query state
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -1145,53 +683,36 @@ export default function OrdersPage() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [page, setPage] = useState(1);
 
-  // Customer filter options (active customers)
   const [filterCustomers, setFilterCustomers] = useState([]);
   const [customersError, setCustomersError] = useState(null);
 
-  // Modals
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState(null);
-  const [confirm, setConfirm] = useState(null); // { kind, order, to }
+  const [confirm, setConfirm] = useState(null); // { kind, order }
 
-  // Toast
   const [toast, setToast] = useState(null);
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type, key: Date.now() });
   }, []);
 
-  // Debounce search
   useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 350);
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
     return () => clearTimeout(t);
   }, [search]);
 
-  // Load active customers for the filter dropdown (non-blocking on failure).
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const res = await getCustomers({
-          status: "active",
-          limit: 100,
-          sortBy: "name",
-          sortOrder: "asc",
-        });
+        const res = await getCustomers({ status: "active", limit: 100, sortBy: "name", sortOrder: "asc" });
         if (active) setFilterCustomers(res.data.customers || []);
       } catch (err) {
-        if (active)
-          setCustomersError(err.message || "Failed to load customers.");
+        if (active) setCustomersError(err.message || "Failed to load customers.");
       }
     })();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
-  // Load orders
   const load = useCallback(async () => {
     setLoading(true);
     setListError(null);
@@ -1210,11 +731,8 @@ export default function OrdersPage() {
     }
   }, [page, debouncedSearch, statusFilter, customerFilter, sortBy, sortOrder]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  // Direct (non-cancel) status change from a row.
   const changeStatus = async (order, action) => {
     setRowBusy(order._id);
     try {
@@ -1229,11 +747,8 @@ export default function OrdersPage() {
   };
 
   const runConfirmAction = async () => {
-    if (confirm.kind === "cancel") {
-      await updateOrderStatus(confirm.order._id, "cancelled");
-    } else {
-      await deleteOrder(confirm.order._id);
-    }
+    if (confirm.kind === "cancel") await updateOrderStatus(confirm.order._id, "cancelled");
+    else await deleteOrder(confirm.order._id);
   };
 
   const onConfirmDone = () => {
@@ -1244,7 +759,6 @@ export default function OrdersPage() {
       load();
       return;
     }
-    // delete
     showToast("Order deleted successfully.", "success");
     if (detailId === order._id) setDetailId(null);
     if (orders.length === 1 && page > 1) setPage((p) => p - 1);
@@ -1256,102 +770,47 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-            Orders
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
+      <PageHeader
+        title="Orders"
+        description={
+          <>
             Manage customer orders and order status
-            {pagination.total > 0 &&
-              ` · ${pagination.total.toLocaleString()} total`}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex shrink-0 items-center gap-2 rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          New Order
-        </button>
-      </div>
+            {pagination.total > 0 && ` · ${pagination.total.toLocaleString()} total`}
+          </>
+        }
+        action={
+          <Button icon={Plus} size="lg" onClick={() => setCreateOpen(true)}>
+            New Order
+          </Button>
+        }
+      />
 
-      {/* Toolbar */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search
-            className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-zinc-400"
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by customer name or email…"
-            aria-label="Search orders by customer"
-            className="block w-full rounded-md border border-zinc-300 py-2 pr-9 pl-9 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              aria-label="Clear search"
-              className="absolute inset-y-0 right-2.5 my-auto text-zinc-400 hover:text-zinc-700"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Customer filter */}
-        <select
-          value={customerFilter}
-          onChange={(e) => {
-            setCustomerFilter(e.target.value);
-            setPage(1);
-          }}
-          aria-label="Filter by customer"
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 lg:w-auto"
-        >
+        <SearchInput
+          className="flex-1"
+          value={search}
+          onChange={setSearch}
+          onClear={() => setSearch("")}
+          placeholder="Search by customer name or email…"
+          label="Search orders by customer"
+        />
+        <FilterSelect label="Filter by customer" value={customerFilter} onChange={(v) => { setCustomerFilter(v); setPage(1); }}>
           <option value="">All customers</option>
           {filterCustomers.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.name}
-            </option>
+            <option key={c._id} value={c._id}>{c.name}</option>
           ))}
-        </select>
-
-        {/* Status filter */}
-        <select
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPage(1);
-          }}
-          aria-label="Filter by status"
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 lg:w-auto"
-        >
+        </FilterSelect>
+        <FilterSelect label="Filter by status" value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }}>
           <option value="">All statuses</option>
           <option value="pending">Pending</option>
           <option value="processing">Processing</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
-        </select>
-
-        {/* Sort */}
-        <select
+        </FilterSelect>
+        <FilterSelect
+          label="Sort orders"
           value={`${sortBy}:${sortOrder}`}
-          onChange={(e) => {
-            const [field, order] = e.target.value.split(":");
-            setSortBy(field);
-            setSortOrder(order);
-            setPage(1);
-          }}
-          aria-label="Sort orders"
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 lg:w-auto"
+          onChange={(v) => { const [field, order] = v.split(":"); setSortBy(field); setSortOrder(order); setPage(1); }}
         >
           {SORT_FIELDS.map((f) => (
             <optgroup key={f.value} label={f.label}>
@@ -1359,7 +818,7 @@ export default function OrdersPage() {
               <option value={`${f.value}:desc`}>{f.label} — descending</option>
             </optgroup>
           ))}
-        </select>
+        </FilterSelect>
       </div>
 
       {customersError && (
@@ -1368,229 +827,123 @@ export default function OrdersPage() {
         </p>
       )}
 
-      {/* Content */}
-      <div className="rounded-lg border border-zinc-200 bg-white">
-        {/* Loading */}
-        {loading && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex items-center justify-center gap-2.5 py-16 text-sm text-zinc-500"
-          >
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            <span>Loading orders…</span>
-          </div>
-        )}
+      <Card padded={false}>
+        {loading && <LoadingState label="Loading orders…" />}
 
-        {/* Error */}
         {!loading && listError && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-500">
-              <AlertCircle className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <p className="mt-3 font-medium text-zinc-900">Failed to load orders</p>
-            <p className="mt-1 text-sm text-zinc-500">{listError}</p>
-            <button
-              type="button"
-              onClick={load}
-              className="mt-4 inline-flex items-center gap-2 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              Retry
-            </button>
-          </div>
+          <ErrorState title="Failed to load orders" message={listError} onRetry={load} />
         )}
 
-        {/* Empty */}
         {isEmpty && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-400">
-              <ShoppingBag className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <p className="mt-3 font-medium text-zinc-700">
-              {hasFilters ? "No orders match your filters" : "No orders yet"}
-            </p>
-            <p className="mt-1 text-sm text-zinc-400">
-              {hasFilters
+          <EmptyState
+            icon={ShoppingBag}
+            title={hasFilters ? "No orders match your filters" : "No orders yet"}
+            description={
+              hasFilters
                 ? "Try adjusting your search or filter criteria."
-                : "Create your first order to get started."}
-            </p>
-            {!hasFilters && (
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="mt-4 inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                New Order
-              </button>
-            )}
-          </div>
+                : "Create your first order to get started."
+            }
+            action={
+              !hasFilters && (
+                <Button icon={Plus} onClick={() => setCreateOpen(true)}>
+                  New Order
+                </Button>
+              )
+            }
+          />
         )}
 
-        {/* Table */}
         {!loading && !listError && orders.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Order list">
-              <thead>
-                <tr className="border-b border-zinc-100 bg-zinc-50/60">
-                  <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Date
-                  </th>
-                  <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Customer
-                  </th>
-                  <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Items
-                  </th>
-                  <th scope="col" className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Total
-                  </th>
-                  <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Status
-                  </th>
-                  <th scope="col" className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {orders.map((o) => {
-                  const actions = STATUS_ACTIONS[o.status] || [];
-                  const canDelete = ORDERABLE_STATUS[o.status]?.canDelete;
-                  const itemCount = (o.items || []).length;
-                  const summary = (o.items || [])
-                    .map((it) => it.product?.name)
-                    .filter(Boolean)
-                    .join(", ");
-                  return (
-                    <tr key={o._id} className="hover:bg-zinc-50/50">
-                      {/* Date */}
-                      <td className="whitespace-nowrap px-5 py-3.5 text-zinc-600">
-                        {formatDateTime(o.createdAt)}
-                      </td>
-                      {/* Customer */}
-                      <td className="px-5 py-3.5">
-                        <p className="font-medium text-zinc-900">
-                          {orDash(o.customer?.name)}
-                        </p>
-                        {o.customer?.email && (
-                          <p className="max-w-[220px] truncate text-xs text-zinc-400">
-                            {o.customer.email}
-                          </p>
-                        )}
-                      </td>
-                      {/* Items */}
-                      <td className="px-5 py-3.5 text-zinc-600">
-                        <span>{itemCount}</span>
-                        {summary && (
-                          <p className="max-w-[220px] truncate text-xs text-zinc-400">
-                            {summary}
-                          </p>
-                        )}
-                      </td>
-                      {/* Total */}
-                      <td className="px-5 py-3.5 text-right tabular-nums text-zinc-900">
-                        {formatPrice(o.totalAmount)}
-                      </td>
-                      {/* Status */}
-                      <td className="px-5 py-3.5">
-                        <StatusBadge status={o.status} />
-                      </td>
-                      {/* Actions */}
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center justify-end gap-1">
-                          {actions.map((action) => (
-                            <button
-                              key={action.to}
-                              type="button"
-                              disabled={rowBusy === o._id}
-                              onClick={() =>
-                                action.confirm
-                                  ? setConfirm({ kind: "cancel", order: o })
-                                  : changeStatus(o, action)
-                              }
-                              aria-label={`${action.label} order ${orDash(o.customer?.name)}`}
-                              className={
-                                action.to === "cancelled"
-                                  ? "rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-40"
-                                  : "rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-40"
-                              }
-                            >
-                              {action.label}
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => setDetailId(o._id)}
-                            aria-label={`View order ${orDash(o.customer?.name)}`}
-                            className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          {canDelete && (
-                            <button
-                              type="button"
-                              onClick={() => setConfirm({ kind: "delete", order: o })}
-                              aria-label={`Delete order ${orDash(o.customer?.name)}`}
-                              className="rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-600"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" aria-label="Order list">
+                <thead>
+                  <tr className="border-b border-zinc-100 bg-zinc-50/60">
+                    <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Date</th>
+                    <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Customer</th>
+                    <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Items</th>
+                    <th scope="col" className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">Total</th>
+                    <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Status</th>
+                    <th scope="col" className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {orders.map((o) => {
+                    const actions = STATUS_ACTIONS[o.status] || [];
+                    const canDelete = ORDERABLE_STATUS[o.status]?.canDelete;
+                    const itemCount = (o.items || []).length;
+                    const summary = (o.items || []).map((it) => it.product?.name).filter(Boolean).join(", ");
+                    return (
+                      <tr key={o._id} className="hover:bg-zinc-50/50">
+                        <td className="whitespace-nowrap px-5 py-3.5 text-zinc-600">{formatDateTime(o.createdAt)}</td>
+                        <td className="px-5 py-3.5">
+                          <p className="font-medium text-zinc-900">{orDash(o.customer?.name)}</p>
+                          {o.customer?.email && (
+                            <p className="max-w-[220px] truncate text-xs text-zinc-400">{o.customer.email}</p>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {!loading && !listError && pagination.totalPages > 0 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-zinc-100 px-5 py-3.5 sm:flex-row">
-            <p className="text-xs text-zinc-500">
-              Showing{" "}
-              <span className="font-medium text-zinc-700">
-                {(page - 1) * PAGE_SIZE + 1}–
-                {Math.min(page * PAGE_SIZE, pagination.total)}
-              </span>{" "}
-              of{" "}
-              <span className="font-medium text-zinc-700">
-                {pagination.total}
-              </span>{" "}
-              orders
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage((p) => p - 1)}
-                disabled={page <= 1}
-                aria-label="Previous page"
-                className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="min-w-[5rem] text-center text-xs text-zinc-600">
-                Page {page} of {pagination.totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={page >= pagination.totalPages}
-                aria-label="Next page"
-                className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+                        </td>
+                        <td className="px-5 py-3.5 text-zinc-600">
+                          <span>{itemCount}</span>
+                          {summary && <p className="max-w-[220px] truncate text-xs text-zinc-400">{summary}</p>}
+                        </td>
+                        <td className="px-5 py-3.5 text-right tabular-nums text-zinc-900">{formatPrice(o.totalAmount)}</td>
+                        <td className="px-5 py-3.5">
+                          <StatusBadge status={o.status} />
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center justify-end gap-1">
+                            {actions.map((action) => (
+                              <button
+                                key={action.to}
+                                type="button"
+                                disabled={rowBusy === o._id}
+                                onClick={() =>
+                                  action.confirm
+                                    ? setConfirm({ kind: "cancel", order: o })
+                                    : changeStatus(o, action)
+                                }
+                                aria-label={`${action.label} order ${orDash(o.customer?.name)}`}
+                                className={
+                                  action.to === "cancelled"
+                                    ? "rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-40"
+                                    : "rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-40"
+                                }
+                              >
+                                {action.label}
+                              </button>
+                            ))}
+                            <IconButton icon={Eye} label={`View order ${orDash(o.customer?.name)}`} onClick={() => setDetailId(o._id)} />
+                            {canDelete && (
+                              <IconButton
+                                icon={Trash2}
+                                tone="danger"
+                                label={`Delete order ${orDash(o.customer?.name)}`}
+                                onClick={() => setConfirm({ kind: "delete", order: o })}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* Create modal */}
+            {pagination.totalPages > 0 && (
+              <Pagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={pagination.total}
+                totalPages={pagination.totalPages}
+                itemLabel="orders"
+                onPageChange={setPage}
+              />
+            )}
+          </>
+        )}
+      </Card>
+
       {createOpen && (
         <CreateOrderModal
           onClose={() => setCreateOpen(false)}
@@ -1603,7 +956,6 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Detail modal */}
       {detailId && (
         <OrderDetailModal
           orderId={detailId}
@@ -1613,27 +965,18 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Confirm modal (cancel / delete from list rows) */}
       {confirm && (
         <ConfirmModal
           title={confirm.kind === "cancel" ? "Cancel Order" : "Delete Order"}
           confirmLabel={confirm.kind === "cancel" ? "Cancel Order" : "Delete"}
+          cancelLabel="Keep Order"
           message={
             confirm.kind === "cancel" ? (
-              <p>
-                Cancelling this order will restore its reserved stock. This
-                cannot be undone.
-              </p>
+              <p>Cancelling this order will restore its reserved stock. This cannot be undone.</p>
             ) : confirm.order.status === "cancelled" ? (
-              <p>
-                Are you sure you want to delete this cancelled order? Its stock
-                was already restored during cancellation.
-              </p>
+              <p>Are you sure you want to delete this cancelled order? Its stock was already restored during cancellation.</p>
             ) : (
-              <p>
-                Deleting this order will restore its reserved stock. This action
-                cannot be undone.
-              </p>
+              <p>Deleting this order will restore its reserved stock. This action cannot be undone.</p>
             )
           }
           action={runConfirmAction}
@@ -1642,14 +985,8 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Toast */}
       {toast && (
-        <Toast
-          key={toast.key}
-          message={toast.message}
-          type={toast.type}
-          onDismiss={() => setToast(null)}
-        />
+        <Toast key={toast.key} message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />
       )}
     </div>
   );

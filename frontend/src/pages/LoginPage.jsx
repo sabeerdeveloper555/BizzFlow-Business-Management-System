@@ -1,15 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  AlertCircle,
-  Eye,
-  EyeOff,
-  Loader2,
-  Lock,
-  Mail,
-  ShieldCheck,
-} from "lucide-react";
-import { LoadingState } from "../components/common/PageState.jsx";
+import { Eye, EyeOff, Lock, Mail, ShieldCheck } from "lucide-react";
+import { Alert, Button, LoadingState, controlCls } from "../components/ui/index.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,14 +82,14 @@ export default function LoginPage() {
 
   if (authLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
-        <LoadingState label="Verifying session..." />
+      <main className="flex min-h-screen items-center justify-center bg-zinc-100 px-4">
+        <LoadingState label="Verifying session..." className="py-0" />
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12 sm:px-6 lg:px-8">
+    <main className="flex min-h-screen items-center justify-center bg-zinc-100 px-4 py-12 sm:px-6 lg:px-8">
       <div className="w-full max-w-md">
         {/* Card Container */}
         <div className="rounded-lg border border-zinc-200 bg-white p-8 shadow-xs">
@@ -116,16 +108,8 @@ export default function LoginPage() {
 
           {/* API Error Notification */}
           {apiError && (
-            <div
-              role="alert"
-              aria-live="assertive"
-              className="mt-6 flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3.5 text-sm text-red-800"
-            >
-              <AlertCircle
-                className="mt-0.5 h-4 w-4 shrink-0 text-red-600"
-                aria-hidden="true"
-              />
-              <span className="leading-snug">{apiError}</span>
+            <div className="mt-6">
+              <Alert variant="danger">{apiError}</Alert>
             </div>
           )}
 
@@ -157,21 +141,16 @@ export default function LoginPage() {
                   aria-describedby={
                     fieldErrors.email ? "email-error" : undefined
                   }
-                  className={`block w-full rounded-md border py-2.5 pr-3 pl-9.5 text-sm text-zinc-900 placeholder-zinc-400 transition-colors disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 ${
-                    fieldErrors.email
-                      ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                      : "border-zinc-300 focus:border-zinc-900"
-                  }`}
+                  className={controlCls(fieldErrors.email, "py-2.5 pl-9.5")}
                 />
               </div>
               {fieldErrors.email && (
                 <p
                   id="email-error"
                   role="alert"
-                  className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600"
+                  className="mt-1.5 text-xs font-medium text-red-600"
                 >
-                  <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{fieldErrors.email}</span>
+                  {fieldErrors.email}
                 </p>
               )}
             </div>
@@ -204,11 +183,7 @@ export default function LoginPage() {
                   aria-describedby={
                     fieldErrors.password ? "password-error" : undefined
                   }
-                  className={`block w-full rounded-md border py-2.5 pr-10 pl-9.5 text-sm text-zinc-900 placeholder-zinc-400 transition-colors disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 ${
-                    fieldErrors.password
-                      ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                      : "border-zinc-300 focus:border-zinc-900"
-                  }`}
+                  className={controlCls(fieldErrors.password, "py-2.5 pr-10 pl-9.5")}
                 />
                 <button
                   type="button"
@@ -228,33 +203,24 @@ export default function LoginPage() {
                 <p
                   id="password-error"
                   role="alert"
-                  className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600"
+                  className="mt-1.5 text-xs font-medium text-red-600"
                 >
-                  <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{fieldErrors.password}</span>
+                  {fieldErrors.password}
                 </p>
               )}
             </div>
 
             {/* Submit Button */}
             <div className="pt-1">
-              <button
+              <Button
                 type="submit"
-                disabled={submitting}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                fullWidth
+                size="lg"
+                loading={submitting}
+                className="focus-visible:ring-offset-2"
               >
-                {submitting ? (
-                  <>
-                    <Loader2
-                      className="h-4 w-4 animate-spin text-zinc-300"
-                      aria-hidden="true"
-                    />
-                    <span>Signing in...</span>
-                  </>
-                ) : (
-                  <span>Sign in</span>
-                )}
-              </button>
+                {submitting ? "Signing in…" : "Sign in"}
+              </Button>
             </div>
           </form>
         </div>

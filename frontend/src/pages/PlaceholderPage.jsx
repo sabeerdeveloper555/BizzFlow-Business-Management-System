@@ -1,13 +1,17 @@
+import { Card, PageHeader } from "../components/ui/index.js";
+
 export default function PlaceholderPage({ title }) {
   return (
-    <section>
-      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-        BizFlow
-      </p>
-      <h1 className="mt-2 text-3xl font-semibold">{title}</h1>
-      <p className="mt-3 text-slate-600">
-        This workspace is ready for the next implementation phase.
-      </p>
-    </section>
+    <div className="space-y-6">
+      <PageHeader
+        title={title}
+        description="This workspace is ready for the next implementation phase."
+      />
+      <Card className="flex items-center justify-center py-16 text-center">
+        <p className="text-sm text-zinc-500">
+          Nothing to show here yet. Check back soon.
+        </p>
+      </Card>
+    </div>
   );
 }

@@ -1,11 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { ShieldAlert, ArrowLeft, LayoutDashboard } from "lucide-react";
+import { Button } from "../components/ui/index.js";
 
 export default function ForbiddenPage() {
   const navigate = useNavigate();
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12 text-zinc-900 sm:px-6">
+    <main className="flex min-h-screen items-center justify-center bg-zinc-100 px-4 py-12 text-zinc-900 sm:px-6">
       <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-8 text-center shadow-xs">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-700">
           <ShieldAlert className="h-6 w-6" aria-hidden="true" />
@@ -22,22 +23,12 @@ export default function ForbiddenPage() {
         </p>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard")}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2"
-          >
-            <LayoutDashboard className="h-4 w-4" />
+          <Button icon={LayoutDashboard} onClick={() => navigate("/dashboard")}>
             Go to Dashboard
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="secondary" icon={ArrowLeft} onClick={() => navigate(-1)}>
             Go Back
-          </button>
+          </Button>
         </div>
       </div>
     </main>

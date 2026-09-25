@@ -1,78 +1,51 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
-import { useAuth } from "../../context/AuthContext.jsx";
+import { useEffect, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+import Sidebar from "./Sidebar.jsx";
+import Header from "./Header.jsx";
 
-const links = [
-  ["Dashboard", "/dashboard"],
-  ["Customers", "/customers"],
-  ["Products", "/products"],
-  ["Orders", "/orders"],
-];
-
+/* Application shell: a fixed sidebar on desktop, a slide-in drawer with overlay
+   on mobile/tablet, and a compact header above a independently scrolling main
+   region. The root uses h-screen + overflow-hidden so wide content (tables)
+   scrolls within its own card instead of overflowing the page horizontally. */
 export default function AppLayout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { pathname } = useLocation();
 
-  const handleLogout = async () => {
-    await logout();
-    navigate("/login", { replace: true });
-  };
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  // Escape closes the drawer.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const handler = (e) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [sidebarOpen]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-5 px-5 py-4">
-          <NavLink
-            to="/dashboard"
-            className="mr-auto text-lg font-bold tracking-tight"
-          >
-            BizFlow
-          </NavLink>
-          <nav className="flex flex-wrap gap-1" aria-label="Main navigation">
-            {links.map(([label, path]) => (
-              <NavLink
-                key={path}
-                to={path}
-                className={({ isActive }) =>
-                  `rounded px-3 py-2 text-sm ${isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`
-                }
-              >
-                {label}
-              </NavLink>
-            ))}
-            {user?.role === "admin" && (
-              <NavLink
-                to="/staff"
-                className={({ isActive }) =>
-                  `rounded px-3 py-2 text-sm ${isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`
-                }
-              >
-                Staff
-              </NavLink>
-            )}
-          </nav>
-          <div className="flex items-center gap-3">
-            {user && (
-              <div className="hidden text-right sm:block">
-                <p className="text-xs font-medium text-slate-900">{user.name || user.email}</p>
-                <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-                  {user.role}
-                </span>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900"
-            >
-              <LogOut size={16} /> Log out
-            </button>
+    <div className="flex h-screen overflow-hidden bg-zinc-100 text-zinc-900">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <Outlet />
           </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-5 py-8">
-        <Outlet />
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

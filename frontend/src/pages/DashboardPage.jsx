@@ -24,12 +24,15 @@ function fmt(n) {
   return Number(n).toLocaleString();
 }
 
-function fmtCurrency(n) {
-  if (n == null || isNaN(n)) return "Rs. 0";
-  return `Rs. ${Number(n).toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
+// Monetary values are stored on the backend as bare numbers with no currency,
+// so — matching the Orders/Products pages — they are rendered as a grouped
+// decimal only, with no currency symbol assumed.
+function fmtAmount(n) {
+  const value = n == null || isNaN(n) ? 0 : Number(n);
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function fmtDate(iso) {
@@ -92,9 +95,12 @@ function StatusBadge({ status }) {
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function SectionTitle({ children }) {
+function SectionTitle({ id, children }) {
   return (
-    <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+    <h2
+      id={id}
+      className="text-sm font-semibold uppercase tracking-wider text-zinc-500"
+    >
       {children}
     </h2>
   );
@@ -129,6 +135,83 @@ function MetricCard({ icon: Icon, label, value, sub, iconClass = "text-zinc-500"
   );
 }
 
+// ── skeleton (keeps layout stable while loading) ─────────────────────────────
+
+function SkeletonBlock({ className = "" }) {
+  return (
+    <div
+      className={`animate-pulse rounded-md bg-zinc-200/70 ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div
+      className="space-y-8"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span className="sr-only">Loading dashboard…</span>
+
+      {/* Page title */}
+      <div>
+        <SkeletonBlock className="h-7 w-40" />
+        <SkeletonBlock className="mt-2 h-4 w-64" />
+      </div>
+
+      {/* Summary metrics */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={`metric-${i}`}
+            className="flex items-start gap-4 rounded-lg border border-zinc-200 bg-white p-5"
+          >
+            <SkeletonBlock className="h-10 w-10 shrink-0 rounded-md" />
+            <div className="min-w-0 flex-1">
+              <SkeletonBlock className="h-3 w-24" />
+              <SkeletonBlock className="mt-2 h-7 w-16" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Order status + Inventory */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-lg border border-zinc-200 bg-white p-5">
+          <SkeletonBlock className="h-4 w-28" />
+          <SkeletonBlock className="mt-4 h-2 w-full rounded-full" />
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonBlock key={`status-${i}`} className="h-4 w-full" />
+            ))}
+          </div>
+        </div>
+        <div className="rounded-lg border border-zinc-200 bg-white p-5">
+          <SkeletonBlock className="h-4 w-28" />
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonBlock key={`inv-${i}`} className="h-16 w-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent orders */}
+      <div className="rounded-lg border border-zinc-200 bg-white p-5">
+        <SkeletonBlock className="h-4 w-32" />
+        <div className="mt-4 space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <SkeletonBlock key={`order-${i}`} className="h-5 w-full" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -155,16 +238,7 @@ export default function DashboardPage() {
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className="flex items-center justify-center gap-2.5 py-20 text-sm text-zinc-500"
-      >
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        <span>Loading dashboard…</span>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   // ── Error ───────────────────────────────────────────────────────────────────
@@ -174,7 +248,7 @@ export default function DashboardPage() {
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">
           <AlertTriangle className="h-6 w-6" aria-hidden="true" />
         </div>
-        <p className="mt-4 font-medium text-zinc-900">Unable to load dashboard</p>
+        <p className="mt-4 font-medium text-zinc-900">Unable to load dashboard data.</p>
         <p className="mt-1 text-sm text-zinc-500">{error}</p>
         <button
           type="button"
@@ -240,7 +314,7 @@ export default function DashboardPage() {
           <MetricCard
             icon={DollarSign}
             label="Total Revenue"
-            value={fmtCurrency(totalRevenue)}
+            value={fmtAmount(totalRevenue)}
             sub="From completed orders"
             iconClass="text-emerald-600"
           />
@@ -429,7 +503,7 @@ export default function DashboardPage() {
                 aria-hidden="true"
               />
               <p className="mt-3 text-sm font-medium text-zinc-500">
-                No orders yet
+                No recent orders found.
               </p>
               <p className="mt-1 text-xs text-zinc-400">
                 Orders will appear here once customers place them.
@@ -498,7 +572,7 @@ export default function DashboardPage() {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right font-semibold text-zinc-900">
-                        {fmtCurrency(order.totalAmount ?? order.total)}
+                        {fmtAmount(order.totalAmount ?? order.total)}
                       </td>
                       <td className="px-5 py-3.5">
                         <StatusBadge status={order.status} />
@@ -609,7 +683,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <span className="text-sm font-semibold text-zinc-900">
-                      {fmtCurrency(product.revenue)}
+                      {fmtAmount(product.revenue)}
                     </span>
                   </li>
                 ))}

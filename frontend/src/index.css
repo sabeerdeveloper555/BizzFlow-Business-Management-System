@@ -1,16 +1,40 @@
 @import "tailwindcss";
 
+/* ── Design system tokens ───────────────────────────────────────────────
+   BizFlow uses a restrained, professional neutral palette. Semantic
+   accents (emerald / amber / red) are reserved for status only. Blue,
+   indigo and purple are intentionally absent across the whole app. */
+@theme {
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --color-canvas: #f4f4f5; /* app background  (zinc-100)   */
+  --color-surface: #ffffff; /* cards / panels  (white)      */
+  --color-line: #e4e4e7; /* borders       (zinc-200)   */
+  --color-ink: #18181b; /* primary text  (zinc-900)   */
+  --color-muted: #71717a; /* secondary text(zinc-500)   */
+}
+
 :root {
-  font-family: "DM Sans", "Segoe UI", sans-serif;
-  color: #0f172a;
-  background: #f8fafc;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  background: var(--color-canvas);
+  color: var(--color-ink);
 }
 
 button,
@@ -18,4 +42,31 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+/* Subtle, consistent scrollbars that match the neutral palette. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #d4d4d8;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #a1a1aa;
+}
+
+::selection {
+  background: #18181b;
+  color: #ffffff;
 }
