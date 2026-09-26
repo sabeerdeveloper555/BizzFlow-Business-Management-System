@@ -6,8 +6,8 @@ metrics through a role-based system. It ships with a JWT-secured REST API,
 role-based access control (Admin / Staff), order-driven stock management, and a
 responsive React dashboard built on a small, reusable UI component system.
 
-> **Status:** Application features are implemented and running locally.
-> Deployment is planned for the next phase and has **not** been performed yet.
+> **Status:** Application features are implemented and the system is deployed
+> to production (Vercel + MongoDB Atlas). See [Deployment](#deployment).
 
 - **Frontend:** React · Vite · Tailwind CSS · React Router · Axios · Lucide React
 - **Backend:** Node.js · Express · MongoDB (Mongoose) · JWT · bcryptjs
@@ -547,26 +547,55 @@ Demo password (local seed only): <see backend/src/scripts/seedDemoData.js>
 
 ## Deployment
 
-> **Deployment configuration is planned for the next phase. BizFlow is not
-> currently deployed.**
+> **BizFlow is deployed to production.** The React/Vite frontend and the
+> Express backend both run as Vercel deployments, backed by a MongoDB Atlas
+> cluster. Requests flow over HTTPS:
+>
+> ```text
+> React + Vite Frontend  →  Vercel
+>        │  HTTPS API requests
+>        ▼
+> Express + Node.js Backend  →  Vercel (serverless)
+>        │
+>        ▼
+>     MongoDB Atlas
+> ```
 
-The **intended** (planned) target architecture is:
+| Component | Target | Live URL |
+| --- | --- | --- |
+| Frontend | Vercel | https://bizflow-frontend-self.vercel.app |
+| Backend API | Vercel | https://bizflow-backend-teal.vercel.app |
+| Health check | — | https://bizflow-backend-teal.vercel.app/api/health |
+| Database | MongoDB Atlas | (connection string kept private) |
 
-| Component | Planned target |
+### Production environment variables
+
+Values are provided through the Vercel project Environment Variables (never
+committed to source). Only the **names** are listed here.
+
+Backend (`bizflow-backend`):
+
+| Variable | Purpose |
 | --- | --- |
-| Frontend | Vercel |
-| Backend API | Vercel |
-| Database | MongoDB Atlas |
+| `MONGODB_URI` | MongoDB Atlas connection string |
+| `JWT_SECRET` | Strong secret used to sign/verify JWTs |
+| `JWT_EXPIRES_IN` | Token lifetime (e.g. `1d`) |
+| `CORS_ALLOWED_ORIGIN` | Exact deployed frontend origin (allowlist, no wildcard) |
+| `NODE_ENV` | `production` |
 
-```text
-Frontend:     <coming soon>
-Backend API:  <coming soon>
-```
+Frontend (`bizflow-frontend`):
 
-No live URLs exist yet. When deployment is configured, set the production
-environment variables (including `MONGODB_URI`, a strong `JWT_SECRET`, the
-frontend's `VITE_API_BASE_URL`, and `CORS_ALLOWED_ORIGIN` pointing at the
-deployed frontend origin).
+| Variable | Purpose |
+| --- | --- |
+| `VITE_API_BASE_URL` | Deployed backend API base (`https://<backend>/api`) |
+
+Notes:
+- `VITE_*` values are exposed in the browser bundle, so only the public API URL
+  is placed there — never a secret.
+- The Express app is served through a minimal Vercel serverless entry
+  (`backend/api/index.js`); all original `/api/...` routes are preserved.
+- MongoDB Atlas Network Access must allow Vercel's outbound egress so the
+  serverless functions can reach the cluster.
 
 ---
 

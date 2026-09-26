@@ -34,7 +34,12 @@ app.use(morgan("dev"));
 app.use(express.json());
 
 if (process.env.MONGODB_URI) {
-  connectDB();
+  // Kick off the connection at module load. In serverless the request handler
+  // (api/index.js) awaits the same cached connection before serving DB routes,
+  // so a cold-start failure here is non-fatal and is retried per invocation.
+  // Attach a no-op catch so a rejected initial attempt never surfaces as an
+  // unhandled promise rejection that could crash the container.
+  connectDB().catch(() => {});
 } else {
   console.log(
     "MongoDB URI not configured; skipping database connection for this architecture step.",
@@ -55,7 +60,11 @@ app.use("/api/users", userRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
-if (process.env.NODE_ENV !== "test") {
+// Only start a listening HTTP server for traditional (local/long-running)
+// execution. Under tests no server is started, and on Vercel (NODE_ENV=production)
+// the exported `app` is invoked directly by the serverless handler in
+// api/index.js, so it must NOT bind a port here.
+if (process.env.NODE_ENV !== "test" && process.env.NODE_ENV !== "production") {
   app.listen(port, () => {
     console.log(`BizFlow API listening on port ${port}`);
   });
