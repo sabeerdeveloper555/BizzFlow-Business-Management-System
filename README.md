@@ -44,6 +44,12 @@ The demo database is pre-seeded for demonstration — see
 
 ## Preview
 
+### Login
+
+JWT-protected sign-in; Admin and Staff then see the workspace their role allows.
+
+![BizFlow Login](docs/screenshots/login.png)
+
 ### Dashboard
 
 Business overview with aggregated metrics, order status, and inventory health.
@@ -445,7 +451,7 @@ BizFlow/
 │   └── vite.config.js
 │
 ├── docs/
-│   └── screenshots/     # UI screenshots embedded in this README
+│   └── screenshots/     # login, dashboard, customers, products, orders, staff
 │
 ├── .gitignore
 └── README.md
