@@ -1,22 +1,67 @@
 # BizFlow — Business Management System
 
-BizFlow is a full-stack (MERN) business management application for handling
-customers, products, orders, staff, inventory-related information, and business
-metrics through a role-based system. It ships with a JWT-secured REST API,
-role-based access control (Admin / Staff), order-driven stock management, and a
-responsive React dashboard built on a small, reusable UI component system.
-
-> **Status:** Application features are implemented and the system is deployed
-> to production (Vercel + MongoDB Atlas). See [Deployment](#deployment).
+BizFlow is a full-stack (MERN) business management application for small and
+growing businesses that need one place to manage customers, products, orders,
+staff, and inventory. It replaces scattered spreadsheets with a role-based
+workspace: staff record day-to-day customers, products, and orders, while
+admins additionally manage staff accounts and monitor business metrics on a
+dashboard. The backend exposes a JWT-secured REST API with order-driven stock
+management, and the frontend is a responsive React SPA built on a reusable UI
+component system.
 
 - **Frontend:** React · Vite · Tailwind CSS · React Router · Axios · Lucide React
 - **Backend:** Node.js · Express · MongoDB (Mongoose) · JWT · bcryptjs
+- **Deployment:** Vercel (frontend + backend) · MongoDB Atlas
 - **Roles:** Admin · Staff
+
+> **Status:** Application features are implemented and the system is deployed
+> to production. Behavior has been verified against the live deployment.
+> See [Deployment](#deployment).
+
+## Live Demo
+
+| Resource | Link |
+| --- | --- |
+| Frontend (web application) | https://bizflow-frontend-self.vercel.app |
+| Backend API | https://bizflow-backend-teal.vercel.app |
+| API Health Check | https://bizflow-backend-teal.vercel.app/api/health |
+| GitHub Repository | https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System |
+
+> The **Frontend** URL is the user-facing application. The **Backend API** URL
+> is a JSON REST service (not a browsable app); use its `/api/health` endpoint
+> to confirm the API is running.
+
+The demo database is pre-seeded for demonstration — see
+[Demo Data & Credentials](#demo-data--credentials).
+
+## Project Highlights
+
+### Core Features
+
+- Dashboard with aggregated business metrics
+- Customer management
+- Product & inventory management
+- Order management with a status lifecycle
+- Staff (user) management
+
+### Engineering Features
+
+- JWT authentication with bcryptjs password hashing
+- Role-based access control (Admin / Staff) enforced in the API and in frontend
+  route guards
+- Search, filtering, sorting, and server-side pagination across modules
+- Request validation and centralized, safe error handling
+- Server-side order totals with automatic stock deduction/restoration
+- Responsive React UI built on a reusable component system
+- Security hardening: Helmet, CORS allowlist, and NoSQL-injection safeguards
+- Deployed to production (Vercel + MongoDB Atlas)
 
 ---
 
 ## Table of Contents
 
+- [Live Demo](#live-demo)
+- [Project Highlights](#project-highlights)
 - [Overview](#overview)
 - [Features](#features)
 - [User Roles & Permissions](#user-roles--permissions)
@@ -50,8 +95,19 @@ BizFlow provides a centralized workspace for day-to-day business operations:
 | **Orders** | Create orders from active products, track status through a defined lifecycle, with server-calculated totals and stock deduction/restoration |
 | **Staff** | Admin-only management of user accounts, roles, and active/inactive status |
 
-All business data is stored in MongoDB and exposed through a versioned JSON REST
-API under `/api`. The React SPA consumes the API with a shared Axios client.
+All business data is stored in MongoDB and exposed through a JSON REST API
+under `/api`. The React SPA consumes the API with a shared Axios client.
+
+### Core workflow
+
+```text
+Customer → Product → Order → Inventory update → Dashboard metrics
+Admin    → Staff accounts → Role / active-status control
+```
+
+An order references an active customer and one or more products; creating it
+deducts stock, and cancelling restores it. The dashboard aggregates the result
+across all modules.
 
 ---
 
@@ -180,12 +236,19 @@ Notes verified from the code:
 
 The application implements several security controls, verified in the source:
 
-- **JWT** signed with a server-side secret; expired/invalid tokens return `401`.
-- **bcryptjs** password hashing (passwords are never stored or returned in
-  plaintext).
+- **JWT** signed with a server-side secret; expired/invalid tokens return `401`,
+  and token payloads are checked for a valid ObjectId before any lookup.
+- **bcryptjs** password hashing (10 salt rounds; passwords are never stored or
+  returned in plaintext).
+- **Safe user serialization** — API responses are built from an explicit field
+  allow-list (`id`, `name`, `email`, `role`, `status`), and the schema keeps
+  `password` as `select: false`.
+- **Inactive-account enforcement** — disabled accounts are rejected at login
+  and on every authenticated request (`403`).
 - **Helmet** for secure HTTP response headers.
 - **CORS allowlist** via `CORS_ALLOWED_ORIGIN` (comma-separated origins);
-  unset falls back to a permissive default for local development only.
+  production uses the exact deployed frontend origin (no wildcard). Unset
+  falls back to a permissive default for local development only.
 - **Input validation** through per-route validators on bodies and query
   parameters.
 - **ObjectId validation** (`/^[0-9a-fA-F]{24}$/`) on `:id` and related params
@@ -195,11 +258,11 @@ The application implements several security controls, verified in the source:
   filters), reducing NoSQL/operator-injection risk.
 - **Server-authoritative totals and stock** for orders — client price/total
   input is not trusted.
-- **Centralized error handling** that maps validation, cast, and duplicate-key
-  errors to safe responses without leaking stack traces.
+- **Centralized error handling** that maps validation, cast, duplicate-key, and
+  unexpected errors to safe, generic responses without leaking stack traces.
 - **Role-based route protection** across the API.
-- Secrets and configuration are read from **environment variables** (never
-  committed).
+- Secrets and configuration are read from **environment variables**; `.env`
+  files and Vercel cache directories are excluded from Git.
 
 > These are defense-in-depth controls for the current scope; the application is
 > not represented as being fully or comprehensively secure.
@@ -244,19 +307,48 @@ The application implements several security controls, verified in the source:
 
 ## Architecture
 
-A single-page React client talks to a REST API over HTTPS. The Express server
-validates and authenticates requests, applies business rules in a service layer,
-and persists data through Mongoose models in MongoDB.
+BizFlow follows the classic MERN stack, deployed on Vercel with MongoDB Atlas:
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | React + Vite + Tailwind CSS |
+| Backend | Node.js + Express.js (serverless on Vercel) |
+| Database | MongoDB + Mongoose (MongoDB Atlas) |
+| Authentication | JWT (jsonwebtoken) + bcryptjs |
+
+The React SPA talks to the REST API over HTTPS through a shared Axios client
+(`frontend/src/services/api`). The Express pipeline then handles each request in
+order — middleware (CORS, Helmet, JSON parsing), authentication and role checks,
+per-route validators, controllers, the service layer with the business rules,
+and finally Mongoose models persisting to MongoDB Atlas:
 
 ```mermaid
-flowchart LR
-    Browser[React SPA\nVite + Tailwind] -->|HTTP / JSON + JWT| API[Express REST API]
-    API --> Auth[Auth & Role middleware]
-    API --> Validators[Request validators]
-    Validators --> Services[Service layer\nbusiness logic]
-    Services --> Models[Mongoose models]
-    Models --> DB[(MongoDB)]
+flowchart TD
+    Browser["Browser"] --> FE["React + Vite frontend"]
+    FE --> Client["Axios API client"]
+    Client -->|"HTTPS · JSON + JWT"| API["Express REST API /api"]
+    API --> MW["Middleware (CORS, Helmet, JSON)"]
+    MW --> AUTH["Authentication & RBAC"]
+    AUTH --> VAL["Request validators"]
+    VAL --> CTL["Controllers"]
+    CTL --> SVC["Services (business logic)"]
+    SVC --> MG["Mongoose models"]
+    MG --> DB[("MongoDB Atlas")]
 ```
+
+In plain terms: users interact with the React frontend, which calls the REST
+API; the backend enforces authentication and Admin/Staff permissions, applies
+the business rules, and stores data in MongoDB.
+
+### Deployment topology
+
+```text
+GitHub  →  Vercel (frontend)  →  Vercel (serverless Express API)  →  MongoDB Atlas
+```
+
+Pushes to the connected GitHub repository can trigger Vercel builds; the
+Express app runs as a Vercel serverless function behind the same `/api` routes.
+See [Deployment](#deployment) for the live URLs and environment variables.
 
 Key characteristics:
 
@@ -265,6 +357,9 @@ Key characteristics:
 - **RBAC** applied per route group.
 - **Order/stock consistency** handled in the service layer (transactions with a
   rollback fallback).
+- **Serverless-ready:** the Express app is exported as a Vercel handler
+  (`backend/api/index.js`) and reuses a cached Mongoose connection across warm
+  invocations.
 
 ---
 
@@ -273,6 +368,8 @@ Key characteristics:
 ```text
 BizFlow/
 ├── backend/
+│   ├── api/
+│   │   └── index.js         # Vercel serverless entry (mounts src/server.js)
 │   ├── src/
 │   │   ├── config/          # MongoDB connection
 │   │   ├── controllers/     # HTTP request handlers
@@ -286,7 +383,8 @@ BizFlow/
 │   │   └── server.js        # app entry / route mounting
 │   ├── tests/               # node:test integration tests
 │   ├── .env.example
-│   └── package.json
+│   ├── package.json
+│   └── vercel.json          # Vercel routing config (all paths → api/index.js)
 │
 ├── frontend/
 │   ├── src/
@@ -302,8 +400,9 @@ BizFlow/
 │   │   └── main.jsx
 │   ├── .env.example
 │   ├── index.html
-│   ├── vite.config.js
-│   └── package.json
+│   ├── package.json
+│   ├── vercel.json          # Vercel build config + SPA fallback rewrite
+│   └── vite.config.js
 │
 ├── .gitignore
 └── README.md
@@ -328,7 +427,28 @@ Base path: `/api`. All responses use a JSON envelope with a `success` flag.
 | POST | `/api/auth/register` | Public | — | Register a new **staff** account |
 | POST | `/api/auth/login` | Public | — | Authenticate and receive a JWT |
 | GET | `/api/auth/me` | Bearer | Any active user | Get current user profile |
-| POST | `/api/auth/logout` | — | — | Stateless logout hint (client removes token) |
+| POST | `/api/auth/logout` | Public (stateless) | — | Logout confirmation; client removes the stored token |
+
+**Example — `POST /api/auth/login`**
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{ "email": "user@example.com", "password": "••••••••" }
+```
+
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "token": "<jwt>",
+  "user": { "id": "…", "name": "…", "email": "…", "role": "staff", "status": "active" }
+}
+```
+
+Send the returned `token` as `Authorization: Bearer <jwt>` on protected routes.
+The `user` object is a safe subset of fields — the password is never returned.
 
 ### Customers (Admin, Staff)
 
@@ -430,12 +550,12 @@ VITE_API_BASE_URL=http://localhost:5000/api
 ### Clone
 
 ```bash
-git clone <repository-url>
-cd BizFlow-Business-Management-System
+git clone https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System.git
+cd BizzFlow-Business-Management-System
 ```
 
-> Replace `<repository-url>` with your clone URL. The configured remote is the
-> project's GitHub repository (see [Author](#author)).
+> Use your preferred clone method (HTTPS/SSH) and authenticate with the
+> repository owner's GitHub account if prompted.
 
 ### Backend
 
@@ -531,17 +651,22 @@ npm run seed
 
 It is **add-only and idempotent** (existing records are matched on unique keys
 and skipped), and it creates demo customers, products, orders, and staff
-accounts, including one **admin** account. The demo password is defined in
-`backend/src/scripts/seedDemoData.js` and applies **only** to the seeded demo
-accounts:
+accounts, including one **admin** account. The seeded demo login accounts
+(throwaway, demonstration only) are:
 
-```text
-Demo password (local seed only): <see backend/src/scripts/seedDemoData.js>
-```
+| Role | Email | Password |
+| --- | --- | --- |
+| Admin | `zeeshan.haider@bizflow.com` | `Demo1234!` |
+| Staff | `nadia.aslam@bizflow.com` | `Demo1234!` |
 
-> These are throwaway local/demo credentials from the repository's seed script,
-> **not** production secrets. Change them, and the `JWT_SECRET`, in any real
-> deployment.
+`Demo1234!` is the shared demo password defined in
+`backend/src/scripts/seedDemoData.js`; it applies **only** to the seeded demo
+accounts and works only against a database that has been seeded with this
+script.
+
+> These are throwaway demo credentials from the repository's own seed script,
+> **not** production secrets. They are not real people or real business data.
+> Change them — and set a strong `JWT_SECRET` — in any real deployment.
 
 ---
 
@@ -591,24 +716,43 @@ Frontend (`bizflow-frontend`):
 
 Notes:
 - `VITE_*` values are exposed in the browser bundle, so only the public API URL
-  is placed there — never a secret.
+  is placed there — never a secret. In production this is
+  `https://bizflow-backend-teal.vercel.app/api`.
 - The Express app is served through a minimal Vercel serverless entry
   (`backend/api/index.js`); all original `/api/...` routes are preserved.
 - MongoDB Atlas Network Access must allow Vercel's outbound egress so the
   serverless functions can reach the cluster.
+- Both Vercel projects are connected to the GitHub repository (production
+  branch `main`), so pushes can trigger Vercel builds; there is no additional
+  custom CI/CD pipeline.
+
+This section covers the **production** deployment. For running the stack
+locally against your own MongoDB instance or Atlas cluster, see
+[Local Development Setup](#local-development-setup).
 
 ---
 
 ## Screenshots
 
-Screenshots will be added after the production deployment phase.
+### Dashboard
 
-- Dashboard
-- Customers
-- Products
-- Orders
-- Staff Management
-- Login
+![BizFlow Dashboard](docs/screenshots/dashboard.png)
+
+### Customer Management
+
+![BizFlow Customers](docs/screenshots/customers.png)
+
+### Product & Inventory Management
+
+![BizFlow Products](docs/screenshots/products.png)
+
+### Order Management
+
+![BizFlow Orders](docs/screenshots/orders.png)
+
+### Staff Management
+
+![BizFlow Staff Management](docs/screenshots/staff.png)
 
 ---
 
@@ -616,14 +760,18 @@ Screenshots will be added after the production deployment phase.
 
 The following are **not** currently implemented and are reasonable next steps:
 
+- Rate limiting on auth and API endpoints
+- Refresh-token / session strategy (logout is currently stateless)
+- Stricter production security headers (CSP, HSTS) on top of Helmet defaults
+- Frontend bundle optimization (code splitting, route-level lazy loading)
+- Audit logging for user and staff actions
 - Payments / invoicing
 - File and image uploads (e.g. product images)
 - Real-time updates (WebSockets)
-- Refresh tokens / token rotation (logout is currently stateless)
 - Docker containerization
-- CI/CD pipelines
 - Advanced reporting and analytics
 - Email notifications
+- Automated CI/CD pipelines beyond Vercel's built-in build/deploy hooks
 
 ---
 
@@ -632,3 +780,5 @@ The following are **not** currently implemented and are reasonable next steps:
 Built by **Sabeer Alam** — Full Stack Developer.
 
 - GitHub: [https://github.com/sabeerdeveloper555](https://github.com/sabeerdeveloper555)
+- Email: alamsabeer05@gmail.com (from the Git commit profile)
+- Repository: [https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System](https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System)
