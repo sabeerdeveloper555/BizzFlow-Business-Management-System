@@ -19,7 +19,16 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+// CORS: in production, restrict cross-origin access to the known frontend
+// origin(s) supplied through CORS_ALLOWED_ORIGIN (comma-separated). When the
+// variable is unset the permissive default is preserved so local development
+// keeps working without extra configuration.
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors(allowedOrigins.length ? { origin: allowedOrigins } : {}));
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
