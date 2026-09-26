@@ -25,7 +25,7 @@ component system.
 | Frontend (web application) | https://bizflow-frontend-self.vercel.app |
 | Backend API | https://bizflow-backend-teal.vercel.app |
 | API Health Check | https://bizflow-backend-teal.vercel.app/api/health |
-| GitHub Repository | https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System |
+| GitHub Repository | https://github.com/sabeerdeveloper555/BizFlow-Business-Management-System |
 
 > The **Frontend** URL is the user-facing application. The **Backend API** URL
 > is a JSON REST service (not a browsable app); use its `/api/health` endpoint
@@ -550,8 +550,8 @@ VITE_API_BASE_URL=http://localhost:5000/api
 ### Clone
 
 ```bash
-git clone https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System.git
-cd BizzFlow-Business-Management-System
+git clone https://github.com/sabeerdeveloper555/BizFlow-Business-Management-System.git
+cd BizFlow-Business-Management-System
 ```
 
 > Use your preferred clone method (HTTPS/SSH) and authenticate with the
@@ -781,4 +781,4 @@ Built by **Sabeer Alam** — Full Stack Developer.
 
 - GitHub: [https://github.com/sabeerdeveloper555](https://github.com/sabeerdeveloper555)
 - Email: alamsabeer05@gmail.com (from the Git commit profile)
-- Repository: [https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System](https://github.com/sabeerdeveloper555/BizzFlow-Business-Management-System)
+- Repository: [https://github.com/sabeerdeveloper555/BizFlow-Business-Management-System](https://github.com/sabeerdeveloper555/BizFlow-Business-Management-System)
