@@ -18,6 +18,14 @@ component system.
 > to production. Behavior has been verified against the live deployment.
 > See [Deployment](#deployment).
 
+![React](https://img.shields.io/badge/React-20236A?style=flat-square&logo=react&logoColor=61DAFB)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=FFFFFF)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=FFFFFF)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=FFFFFF)
+![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=FFFFFF)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat-square&logo=mongodb&logoColor=FFFFFF)
+![Vercel](https://img.shields.io/badge/Deployed_on_Vercel-000000?style=flat-square&logo=vercel&logoColor=FFFFFF)
+
 ## Live Demo
 
 | Resource | Link |
@@ -33,6 +41,38 @@ component system.
 
 The demo database is pre-seeded for demonstration — see
 [Demo Data & Credentials](#demo-data--credentials).
+
+## Preview
+
+### Dashboard
+
+Business overview with aggregated metrics, order status, and inventory health.
+
+![BizFlow Dashboard](docs/screenshots/dashboard.png)
+
+### Customer Management
+
+Customer records with search, filtering, sorting, and pagination.
+
+![BizFlow Customers](docs/screenshots/customers.png)
+
+### Product & Inventory Management
+
+Catalog items with pricing, stock levels, and automatic stock-status handling.
+
+![BizFlow Products](docs/screenshots/products.png)
+
+### Order Management
+
+Orders with server-calculated totals and a status lifecycle.
+
+![BizFlow Orders](docs/screenshots/orders.png)
+
+### Staff Management
+
+Admin-only staff accounts with role and active/inactive control.
+
+![BizFlow Staff](docs/screenshots/staff.png)
 
 ## Project Highlights
 
@@ -61,6 +101,7 @@ The demo database is pre-seeded for demonstration — see
 ## Table of Contents
 
 - [Live Demo](#live-demo)
+- [Preview](#preview)
 - [Project Highlights](#project-highlights)
 - [Overview](#overview)
 - [Features](#features)
@@ -77,7 +118,6 @@ The demo database is pre-seeded for demonstration — see
 - [UI/UX & Responsive Support](#uiux--responsive-support)
 - [Demo Data & Credentials](#demo-data--credentials)
 - [Deployment](#deployment)
-- [Screenshots](#screenshots)
 - [Future Improvements](#future-improvements)
 - [Author](#author)
 
@@ -404,6 +444,9 @@ BizFlow/
 │   ├── vercel.json          # Vercel build config + SPA fallback rewrite
 │   └── vite.config.js
 │
+├── docs/
+│   └── screenshots/     # UI screenshots embedded in this README
+│
 ├── .gitignore
 └── README.md
 ```
@@ -729,30 +772,6 @@ Notes:
 This section covers the **production** deployment. For running the stack
 locally against your own MongoDB instance or Atlas cluster, see
 [Local Development Setup](#local-development-setup).
-
----
-
-## Screenshots
-
-### Dashboard
-
-![BizFlow Dashboard](docs/screenshots/dashboard.png)
-
-### Customer Management
-
-![BizFlow Customers](docs/screenshots/customers.png)
-
-### Product & Inventory Management
-
-![BizFlow Products](docs/screenshots/products.png)
-
-### Order Management
-
-![BizFlow Orders](docs/screenshots/orders.png)
-
-### Staff Management
-
-![BizFlow Staff Management](docs/screenshots/staff.png)
 
 ---
 
